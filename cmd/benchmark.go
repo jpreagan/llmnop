@@ -35,6 +35,7 @@ type BenchmarkResult struct {
 	TTFT         time.Duration
 	InputTokens  int
 	OutputTokens int
+	Throughput   float64
 }
 
 var benchmarkCmd = &cobra.Command{
@@ -87,11 +88,14 @@ var benchmarkCmd = &cobra.Command{
 		close(results)
 
 		ttfts := []float64{}
+		throughputs := []float64{}
 		for result := range results {
 			ttfts = append(ttfts, result.TTFT.Seconds()*1000) // convert to milliseconds
+			throughputs = append(throughputs, result.Throughput)
 		}
 
 		printTTFTMetrics(ttfts)
+		printThroughputMetrics(throughputs)
 
 		fmt.Println("\nRequest Statistics:")
 		fmt.Printf("- Total Requests: %d\n", totalRequests)
@@ -188,7 +192,10 @@ func benchmark(baseURL, apiKey, model, prompt string, inputTokens int) (*Benchma
 		return nil, fmt.Errorf("no tokens received")
 	}
 
-	return &BenchmarkResult{TTFT: ttft, InputTokens: inputTokens, OutputTokens: outputTokens}, nil
+	end := time.Now()
+	throughput := float64(outputTokens) / end.Sub(start).Seconds()
+
+	return &BenchmarkResult{TTFT: ttft, InputTokens: inputTokens, OutputTokens: outputTokens, Throughput: throughput}, nil
 }
 
 func getPromptInstance(meanInputTokens, stddevInputTokens, meanOutputTokens, stddevOutputTokens int) (string, int) {
@@ -334,6 +341,32 @@ func printTTFTMetrics(ttfts []float64) {
 	fmt.Printf("   - p25: %.6f ms, p50: %.6f ms, p75: %.6f ms\n", p25, p50, p75)
 	fmt.Printf("   - p90: %.6f ms, p95: %.6f ms, p99: %.6f ms\n", p90, p95, p99)
 	fmt.Printf("   - mean: %.6f ms\n", meanTTFT)
+}
+
+func printThroughputMetrics(throughputs []float64) {
+	if len(throughputs) == 0 {
+		fmt.Println("No successful requests.")
+		return
+	}
+
+	sort.Float64s(throughputs)
+
+	meanThroughput := mean(throughputs)
+	p25 := percentile(throughputs, 25)
+	p50 := percentile(throughputs, 50)
+	p75 := percentile(throughputs, 75)
+	p90 := percentile(throughputs, 90)
+	p95 := percentile(throughputs, 95)
+	p99 := percentile(throughputs, 99)
+	minThroughput := throughputs[0]
+	maxThroughput := throughputs[len(throughputs)-1]
+	stddevThroughput := stddev(throughputs, meanThroughput)
+
+	fmt.Println("\n2. Throughput Metrics:")
+	fmt.Printf("   - min: %.6f tokens/s, max: %.6f tokens/s, stddev: %.6f tokens/s\n", minThroughput, maxThroughput, stddevThroughput)
+	fmt.Printf("   - p25: %.6f tokens/s, p50: %.6f tokens/s, p75: %.6f tokens/s\n", p25, p50, p75)
+	fmt.Printf("   - p90: %.6f tokens/s, p95: %.6f tokens/s, p99: %.6f tokens/s\n", p90, p95, p99)
+	fmt.Printf("   - mean: %.6f tokens/s\n", meanThroughput)
 }
 
 func mean(values []float64) float64 {
