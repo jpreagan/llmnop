@@ -1,11 +1,13 @@
 # LLMNOP
 
-LLMNOP is a command-line tool for LLMOps used to benchmark Large Language Model (LLM) performance metrics like throughput and latency.
+LLMNOP is a command-line tool for LLMOps used to benchmark Large Language Model (LLM) performance metrics.
 
 ## Features
 
 - Measures key performance indicators: TTFT, ~~TPOT~~, ~~Latency~~, and Throughput
 - Support for concurrent requests to simulate real-world load
+- Configurable input and output tokens distribution for realistic load testing
+- Standardizes metrics across models using BPE tokenization
 
 ## Installation
 
@@ -17,19 +19,26 @@ go install github.com/jpreagan/llmnop@latest
 
 ### Benchmark
 
-```bash
-llmnop benchmark [options]
+Benchmark LLM performance metrics like latency and throughput
+
+#### Usage
+
 ```
+Usage:
+  llmnop benchmark [flags]
 
-#### Options
-
-- --base-url or -u: URL of the inference server (e.g., "https://example.com/v1")
-- --api-key or -k: API key for authentication with the inference server
-- --model or -m: Specify the model to benchmark (e.g., "meta-llama/Meta-Llama-3-70B-Instruct")
-- --iterations or -n: Number of iterations to run (default: 10)
-- --concurrent or -c: Number of concurrent requests (default: 1)
-- --max-tokens or -t: Maximum number of tokens to generate (default: 100)
-- --prompt or -p: The prompt to be used for benchmarking
+Flags:
+  -k, --api-key string             API key for the inference server
+  -u, --base-url string            Base URL for the inference server (e.g., "https://example.com/v1")
+  -c, --concurrency int            Number of concurrent requests (default: 1) (default 1)
+  -h, --help                       help for benchmark
+      --mean-input-tokens int      Mean number of tokens to send in the prompt for the request (default: 550) (default 550)
+      --mean-output-tokens int     Mean number of tokens to generate from each LLM request (default: 150) (default 150)
+  -m, --model string               Specify the model to benchmark (e.g., "meta-llama/Meta-Llama-3-70B-Instruct")
+  -n, --num-iterations int         Number of iterations to run (default: 2) (default 2)
+      --stddev-input-tokens int    Standard deviation of number of tokens to send in the prompt for the request (default: 150) (default 150)
+      --stddev-output-tokens int   Standard deviation on the number of tokens to generate per LLM request (default: 10) (default 10)
+```
 
 #### Example
 
@@ -37,8 +46,9 @@ llmnop benchmark [options]
 llmnop benchmark \
   --base-url https://example.com/v1 \
   --api-key your-api-key-here \
-  --model meta-llama/Meta-Llama-3-70B-Instruct \
-  --prompt "Explain machine learning in simple terms."
+  --model meta-llama/Meta-Llama-3-8B-Instruct \
+  --num-iterations 10 \
+  --concurrency 1
 ```
 
 #### Sample Output
@@ -48,13 +58,23 @@ LLM Benchmark Results for meta-llama/Meta-Llama-3-70B-Instruct
 Endpoint: https://example.com/v1/chat/completions
 Iterations: 10
 Concurrency: 1
-Output Length: 100 tokens
+Mean Input Tokens: 550
+Stddev Input Tokens: 150
+Mean Output Tokens: 150
+Stddev Output Tokens: 10
 
 Performance Metrics:
 1. Time To First Token (TTFT):
-   - Average: 75.021 ms
-   - p50: 74.866 ms, p90: 75.486 ms, p99: 76.683 ms
-   - min: 74.206 ms, max: 76.816 ms, stddev: 0.704 ms
+   - min: 142.769259 ms, max: 264.399014 ms, stddev: 32.770924 ms
+   - p25: 180.707262 ms, p50: 195.950439 ms, p75: 213.903887 ms
+   - p90: 241.836183 ms, p95: 253.117599 ms, p99: 262.142731 ms
+   - mean: 200.360268 ms
+
+2. Throughput Metrics:
+   - min: 15.691557 tokens/s, max: 15.787429 tokens/s, stddev: 0.031595 tokens/s
+   - p25: 15.718978 tokens/s, p50: 15.729153 tokens/s, p75: 15.761459 tokens/s
+   - p90: 15.778008 tokens/s, p95: 15.782718 tokens/s, p99: 15.786487 tokens/s
+   - mean: 15.736316 tokens/s
 
 Request Statistics:
 - Total Requests: 10
