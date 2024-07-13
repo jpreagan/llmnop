@@ -4,7 +4,7 @@ LLMNOP is a command-line tool for LLMOps used to benchmark Large Language Model 
 
 ## Features
 
-- Measures key performance indicators: TTFT, ~~TPOT~~, ~~Latency~~, and ~~Throughput~~
+- Measures key performance indicators: TTFT, ~~TPOT~~, ~~Latency~~, and Throughput
 - Support for concurrent requests to simulate real-world load
 
 ## Installation
