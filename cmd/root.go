@@ -127,16 +127,16 @@ func Execute() {
 }
 
 func init() {
-	rootCmd.Flags().StringVarP(&baseURL, "base-url", "u", "", "Base URL for the inference server (e.g., \"https://example.com/v1\")")
+	rootCmd.Flags().StringVarP(&baseURL, "base-url", "u", "", "base URL for the inference server (e.g., \"https://example.com/v1\")")
 	rootCmd.Flags().StringVarP(&apiKey, "api-key", "k", "", "API key for the inference server")
-	rootCmd.Flags().StringVarP(&model, "model", "m", "", "Specify the model to benchmark (e.g., \"meta-llama/Meta-Llama-3-70B-Instruct\")")
-	rootCmd.Flags().IntVarP(&numIterations, "num-iterations", "n", 2, "Number of iterations to run")
-	rootCmd.Flags().IntVarP(&concurrency, "concurrency", "c", 1, "Number of concurrent requests")
-	rootCmd.Flags().IntVar(&meanInputTokens, "mean-input-tokens", 550, "Mean number of tokens to send in the prompt for the request")
-	rootCmd.Flags().IntVar(&stddevInputTokens, "stddev-input-tokens", 150, "Standard deviation of number of tokens to send in the prompt for the request")
-	rootCmd.Flags().IntVar(&meanOutputTokens, "mean-output-tokens", 150, "Mean number of tokens to generate from each LLM request")
-	rootCmd.Flags().IntVar(&stddevOutputTokens, "stddev-output-tokens", 10, "Standard deviation on the number of tokens to generate per LLM request")
-	rootCmd.Flags().StringVarP(&tokenizerPath, "tokenizer", "t", "", "Path to the tokenizer.json file")
+	rootCmd.Flags().StringVarP(&model, "model", "m", "", "specify the model to benchmark (e.g., \"meta-llama/Meta-Llama-3-70B-Instruct\")")
+	rootCmd.Flags().IntVarP(&numIterations, "num-iterations", "n", 2, "number of iterations to run")
+	rootCmd.Flags().IntVarP(&concurrency, "concurrency", "c", 1, "number of concurrent requests")
+	rootCmd.Flags().IntVar(&meanInputTokens, "mean-input-tokens", 550, "mean number of tokens to send in the prompt for the request")
+	rootCmd.Flags().IntVar(&stddevInputTokens, "stddev-input-tokens", 150, "standard deviation of number of tokens to send in the prompt for the request")
+	rootCmd.Flags().IntVar(&meanOutputTokens, "mean-output-tokens", 150, "mean number of tokens to generate from each LLM request")
+	rootCmd.Flags().IntVar(&stddevOutputTokens, "stddev-output-tokens", 10, "standard deviation on the number of tokens to generate per LLM request")
+	rootCmd.Flags().StringVarP(&tokenizerPath, "tokenizer", "t", "", "path to the tokenizer.json file")
 
 	rootCmd.MarkFlagRequired("base-url")
 	rootCmd.MarkFlagRequired("model")
