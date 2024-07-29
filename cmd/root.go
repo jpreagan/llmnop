@@ -40,6 +40,17 @@ type BenchmarkResult struct {
 	Throughput   float64
 }
 
+type BenchmarkSetup struct {
+	Model              string
+	BaseURL            string
+	NumIterations      int
+	Concurrency        int
+	MeanInputTokens    int
+	StddevInputTokens  int
+	MeanOutputTokens   int
+	StddevOutputTokens int
+}
+
 var (
 	baseURL            string
 	apiKey             string
@@ -58,14 +69,18 @@ var rootCmd = &cobra.Command{
 	Short: "llmnop is a command-line tool for benchmarking Large Language Models (LLM) performance metrics.",
 	Long:  "llmnop is a command-line tool for benchmarking Large Language Models (LLM) performance metrics.",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("LLM Benchmark Results for %s\n", model)
-		fmt.Printf("Endpoint: %s/chat/completions\n", baseURL)
-		fmt.Printf("Iterations: %d\n", numIterations)
-		fmt.Printf("Concurrency: %d\n", concurrency)
-		fmt.Printf("Mean Input Tokens: %d\n", meanInputTokens)
-		fmt.Printf("Stddev Input Tokens: %d\n", stddevInputTokens)
-		fmt.Printf("Mean Output Tokens: %d\n", meanOutputTokens)
-		fmt.Printf("Stddev Output Tokens: %d\n", stddevOutputTokens)
+		setup := BenchmarkSetup{
+			Model:              model,
+			BaseURL:            baseURL,
+			NumIterations:      numIterations,
+			Concurrency:        concurrency,
+			MeanInputTokens:    meanInputTokens,
+			StddevInputTokens:  stddevInputTokens,
+			MeanOutputTokens:   meanOutputTokens,
+			StddevOutputTokens: stddevOutputTokens,
+		}
+
+		printBenchmarkSetup(setup)
 
 		var wg sync.WaitGroup
 		results := make(chan *BenchmarkResult, numIterations*concurrency)
@@ -104,18 +119,18 @@ var rootCmd = &cobra.Command{
 
 		ttfts := []float64{}
 		throughputs := []float64{}
+		inputTokensList := []int{}
+		outputTokensList := []int{}
+
 		for result := range results {
 			ttfts = append(ttfts, result.TTFT.Seconds()*1000) // convert to milliseconds
 			throughputs = append(throughputs, result.Throughput)
+			inputTokensList = append(inputTokensList, result.InputTokens)
+			outputTokensList = append(outputTokensList, result.OutputTokens)
 		}
 
-		printTTFTMetrics(ttfts)
-		printThroughputMetrics(throughputs)
-
-		fmt.Println("\nRequest Statistics:")
-		fmt.Printf("- Total Requests: %d\n", totalRequests)
-		fmt.Printf("- Successful: %d (%.2f%%)\n", successfulRequests, float64(successfulRequests)/float64(totalRequests)*100)
-		fmt.Printf("- Failed: %d (%.2f%%)\n", failedRequests, float64(failedRequests)/float64(totalRequests)*100)
+		printMetricsOverview(ttfts, throughputs, inputTokensList, outputTokensList)
+		printRequestSummary(totalRequests, successfulRequests, failedRequests)
 	},
 }
 
@@ -143,6 +158,18 @@ func init() {
 	rootCmd.MarkFlagRequired("tokenizer")
 }
 
+func printBenchmarkSetup(setup BenchmarkSetup) {
+	fmt.Println("Benchmark Setup")
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Printf("Model: %s\n", setup.Model)
+	fmt.Printf("Endpoint: %s/chat/completions\n", setup.BaseURL)
+	fmt.Printf("Total Requests: %d (Iterations: %d, Concurrency: %d)\n", setup.NumIterations*setup.Concurrency, setup.NumIterations, setup.Concurrency)
+	fmt.Printf("Input Tokens: Mean %d ± %d\n", setup.MeanInputTokens, setup.StddevInputTokens)
+	fmt.Printf("Output Tokens: Mean %d ± %d\n", setup.MeanOutputTokens, setup.StddevOutputTokens)
+	fmt.Printf("Timestamp: %s\n", time.Now().Format(time.RFC3339))
+	fmt.Println()
+}
+
 func benchmark(baseURL, apiKey, model, prompt string, inputTokens int, tp TimeProvider) (*BenchmarkResult, error) {
 	config := openai.DefaultConfig(apiKey)
 	config.BaseURL = baseURL
@@ -153,7 +180,7 @@ func benchmark(baseURL, apiKey, model, prompt string, inputTokens int, tp TimePr
 	req := openai.ChatCompletionRequest{
 		Model: model,
 		Messages: []openai.ChatCompletionMessage{
-			{Role: "system", Content: "You are a helpful assistant."},
+			{Role: "system", Content: ""},
 			{Role: "user", Content: prompt},
 		},
 		Stream: true,
@@ -346,6 +373,28 @@ func sampleRandomPositiveInt(mean, stddev int) int {
 	return ret
 }
 
+func printMetricsOverview(ttfts, throughputs []float64, inputTokensList, outputTokensList []int) {
+	fmt.Println("Performance Metrics")
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	printTTFTMetrics(ttfts)
+	printThroughputMetrics(throughputs)
+	printTokenCountMetrics(inputTokensList, "3. Input Token Count")
+	printTokenCountMetrics(outputTokensList, "4. Output Token Count")
+}
+
+func printRequestSummary(totalRequests, successfulRequests, failedRequests int) {
+	fmt.Println("\nRequest Summary")
+	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	successRate := float64(successfulRequests) / float64(totalRequests) * 100
+	failureRate := float64(failedRequests) / float64(totalRequests) * 100
+
+	fmt.Printf("Total Requests:    %d\n", totalRequests)
+	fmt.Printf("Successful:        %d (%.2f%%)\n", successfulRequests, successRate)
+	fmt.Printf("Failed:            %d (%.2f%%)\n", failedRequests, failureRate)
+}
+
 func printTTFTMetrics(ttfts []float64) {
 	if len(ttfts) == 0 {
 		fmt.Println("No successful requests.")
@@ -354,23 +403,27 @@ func printTTFTMetrics(ttfts []float64) {
 
 	sort.Float64s(ttfts)
 
-	meanTTFT := mean(ttfts)
+	min := ttfts[0]
 	p25 := percentile(ttfts, 25)
-	p50 := percentile(ttfts, 50)
+	median := percentile(ttfts, 50)
 	p75 := percentile(ttfts, 75)
-	p90 := percentile(ttfts, 90)
-	p95 := percentile(ttfts, 95)
-	p99 := percentile(ttfts, 99)
-	minTTFT := ttfts[0]
-	maxTTFT := ttfts[len(ttfts)-1]
-	stddevTTFT := stddev(ttfts, meanTTFT)
+	max := ttfts[len(ttfts)-1]
+	mean := mean(ttfts)
+	stddev := stddev(ttfts, mean)
 
-	fmt.Println("\nPerformance Metrics:")
-	fmt.Println("1. Time To First Token (TTFT):")
-	fmt.Printf("   - min: %.6f ms, p25: %.6f ms, p50: %.6f ms\n", minTTFT, p25, p50)
-	fmt.Printf("   - p75: %.6f ms, p90: %.6f ms, p95: %.6f ms\n", p75, p90, p95)
-	fmt.Printf("   - p99: %.6f ms, max: %.6f ms, stddev: %.6f ms\n", p99, maxTTFT, stddevTTFT)
-	fmt.Printf("   - mean: %.6f ms\n", meanTTFT)
+	labels := []string{"Min", "P25", "Median (P50)", "P75", "Max"}
+	values := []string{
+		fmt.Sprintf("%.0f ms", min),
+		fmt.Sprintf("%.0f ms", p25),
+		fmt.Sprintf("%.0f ms", median),
+		fmt.Sprintf("%.0f ms", p75),
+		fmt.Sprintf("%.0f ms", max),
+	}
+
+	printCentered("1. Time To First Token (TTFT) (ms):", labels, values)
+
+	fmt.Printf("\n   Average (Mean): %.0f ms\n", mean)
+	fmt.Printf("   Standard Deviation: %.0f ms\n", stddev)
 }
 
 func printThroughputMetrics(throughputs []float64) {
@@ -381,22 +434,98 @@ func printThroughputMetrics(throughputs []float64) {
 
 	sort.Float64s(throughputs)
 
-	meanThroughput := mean(throughputs)
+	min := throughputs[0]
 	p25 := percentile(throughputs, 25)
-	p50 := percentile(throughputs, 50)
+	median := percentile(throughputs, 50)
 	p75 := percentile(throughputs, 75)
-	p90 := percentile(throughputs, 90)
-	p95 := percentile(throughputs, 95)
-	p99 := percentile(throughputs, 99)
-	minThroughput := throughputs[0]
-	maxThroughput := throughputs[len(throughputs)-1]
-	stddevThroughput := stddev(throughputs, meanThroughput)
+	max := throughputs[len(throughputs)-1]
+	mean := mean(throughputs)
+	stddev := stddev(throughputs, mean)
 
-	fmt.Println("\n2. Throughput Metrics:")
-	fmt.Printf("   - min: %.6f tokens/s, p25: %.6f tokens/s, p50: %.6f tokens/s\n", minThroughput, p25, p50)
-	fmt.Printf("   - p75: %.6f tokens/s, p90: %.6f tokens/s, p95: %.6f tokens/s\n", p75, p90, p95)
-	fmt.Printf("   - p99: %.6f tokens/s, max: %.6f tokens/s, stddev: %.6f tokens/s\n", p99, maxThroughput, stddevThroughput)
-	fmt.Printf("   - mean: %.6f tokens/s\n", meanThroughput)
+	labels := []string{"Min", "P25", "Median (P50)", "P75", "Max"}
+	values := []string{
+		fmt.Sprintf("%.1f t/s", min),
+		fmt.Sprintf("%.1f t/s", p25),
+		fmt.Sprintf("%.1f t/s", median),
+		fmt.Sprintf("%.1f t/s", p75),
+		fmt.Sprintf("%.1f t/s", max),
+	}
+
+	printCentered("2. Throughput (tokens/second):", labels, values)
+
+	fmt.Printf("\n   Average (Mean): %.0f t/s\n", mean)
+	fmt.Printf("   Standard Deviation: %.0f t/s\n", stddev)
+}
+
+func printTokenCountMetrics(tokens []int, metricName string) {
+	if len(tokens) == 0 {
+		fmt.Println("No successful requests.")
+		return
+	}
+
+	tokensFloat := make([]float64, len(tokens))
+	for i, v := range tokens {
+		tokensFloat[i] = float64(v)
+	}
+
+	sort.Float64s(tokensFloat)
+
+	min := tokensFloat[0]
+	p25 := percentile(tokensFloat, 25)
+	median := percentile(tokensFloat, 50)
+	p75 := percentile(tokensFloat, 75)
+	max := tokensFloat[len(tokensFloat)-1]
+	mean := mean(tokensFloat)
+	stddev := stddev(tokensFloat, mean)
+
+	labels := []string{"Min", "P25", "Median (P50)", "P75", "Max"}
+	values := []string{
+		fmt.Sprintf("%.0f", min),
+		fmt.Sprintf("%.0f", p25),
+		fmt.Sprintf("%.0f", median),
+		fmt.Sprintf("%.0f", p75),
+		fmt.Sprintf("%.0f", max),
+	}
+
+	printCentered(metricName+":", labels, values)
+
+	fmt.Printf("\n   Average (Mean): %.0f\n", mean)
+	fmt.Printf("   Standard Deviation: %.0f\n", stddev)
+}
+
+func printCentered(title string, labels, values []string) {
+	fmt.Println()
+	fmt.Println(title)
+	fmt.Println("       [───────────────|───────────────|───────────────|───────────────]")
+
+	labelLine := ""
+	valueLine := ""
+
+	for i, label := range labels {
+		labelLine += alignCenter(label, 15)
+		if i < len(labels)-1 {
+			labelLine += " "
+		}
+	}
+
+	for i, value := range values {
+		valueLine += alignCenter(value, 15)
+		if i < len(values)-1 {
+			valueLine += " "
+		}
+	}
+
+	fmt.Println(labelLine)
+	fmt.Println(valueLine)
+}
+
+func alignCenter(s string, width int) string {
+	if len(s) >= width {
+		return s
+	}
+	leftPad := (width - len(s)) / 2
+	rightPad := width - len(s) - leftPad
+	return strings.Repeat(" ", leftPad) + s + strings.Repeat(" ", rightPad)
 }
 
 func mean(values []float64) float64 {

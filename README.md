@@ -1,10 +1,10 @@
 # LLMNOP
 
-llmnop is a command-line tool for benchmarking Large Language Models (LLM) performance metrics.
+LLMNOP is a command-line tool for benchmarking Large Language Models (LLM) performance metrics.
 
 ## Features
 
-- Measures key performance indicators: TTFT, ~~TPOT~~, ~~Latency~~, and Throughput
+- Measures key performance indicators: Time To First Token (TTFT) and Throughput
 - Support for concurrent requests to simulate real-world load
 - Configurable input and output tokens distribution for realistic load testing
 - Standardizes comparisons across models using the tokenizer of your choice
@@ -23,16 +23,16 @@ Usage:
 
 Flags:
   -k, --api-key string             API key for the inference server
-  -u, --base-url string            Base URL for the inference server (e.g., "https://example.com/v1")
-  -c, --concurrency int            Number of concurrent requests (default 1)
+  -u, --base-url string            base URL for the inference server (e.g., "https://example.com/v1")
+  -c, --concurrency int            number of concurrent requests (default 1)
   -h, --help                       help for llmnop
-      --mean-input-tokens int      Mean number of tokens to send in the prompt for the request (default 550)
-      --mean-output-tokens int     Mean number of tokens to generate from each LLM request (default 150)
-  -m, --model string               Specify the model to benchmark (e.g., "meta-llama/Meta-Llama-3-70B-Instruct")
-  -n, --num-iterations int         Number of iterations to run (default 2)
-      --stddev-input-tokens int    Standard deviation of number of tokens to send in the prompt for the request (default 150)
-      --stddev-output-tokens int   Standard deviation on the number of tokens to generate per LLM request (default 10)
-  -t, --tokenizer string           Path to the tokenizer.json file
+      --mean-input-tokens int      mean number of tokens to send in the prompt for the request (default 550)
+      --mean-output-tokens int     mean number of tokens to generate from each LLM request (default 150)
+  -m, --model string               specify the model to benchmark (e.g., "meta-llama/Meta-Llama-3-70B-Instruct")
+  -n, --num-iterations int         number of iterations to run (default 2)
+      --stddev-input-tokens int    standard deviation of number of tokens to send in the prompt for the request (default 150)
+      --stddev-output-tokens int   standard deviation on the number of tokens to generate per LLM request (default 10)
+  -t, --tokenizer string           path to the tokenizer.json file
 ```
 
 ## Example
@@ -50,32 +50,55 @@ llmnop \
 ## Sample Output
 
 ```
-LLM Benchmark Results for meta-llama/Meta-Llama-3-70B-Instruct
+Benchmark Setup
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Model: meta-llama/Meta-Llama-3-70B-Instruct
 Endpoint: https://example.com/v1/chat/completions
-Iterations: 10
-Concurrency: 1
-Mean Input Tokens: 550
-Stddev Input Tokens: 150
-Mean Output Tokens: 150
-Stddev Output Tokens: 10
+Total Requests: 10 (Iterations: 10, Concurrency: 1)
+Input Tokens: Mean 550 ± 150
+Output Tokens: Mean 150 ± 10
+Timestamp: 2024-07-28T16:11:43-10:00
 
-Performance Metrics:
-1. Time To First Token (TTFT):
-   - min: 106.419946 ms, p25: 122.582608 ms, p50: 128.821281 ms
-   - p75: 177.126659 ms, p90: 189.810643 ms, p95: 193.101382 ms
-   - p99: 195.733973 ms, max: 196.392121 ms, stddev: 31.741853 ms
-   - mean: 144.805974 ms
+Performance Metrics
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-2. Throughput Metrics:
-   - min: 17.862783 tokens/s, p25: 18.157015 tokens/s, p50: 18.756607 tokens/s
-   - p75: 19.139892 tokens/s, p90: 19.320098 tokens/s, p95: 19.376445 tokens/s
-   - p99: 19.421523 tokens/s, max: 19.432793 tokens/s, stddev: 0.546217 tokens/s
-   - mean: 18.677270 tokens/s
+1. Time To First Token (TTFT) (ms):
+       [───────────────|───────────────|───────────────|───────────────]
+      Min             P25        Median (P50)         P75             Max
+    106 ms          123 ms          129 ms          177 ms          196 ms
 
-Request Statistics:
-- Total Requests: 10
-- Successful: 10 (100.00%)
-- Failed: 0 (0.00%)
+   Average (Mean): 145 ms
+   Standard Deviation: 32 ms
+
+2. Throughput (tokens/second):
+       [───────────────|───────────────|───────────────|───────────────]
+      Min             P25        Median (P50)         P75             Max
+   17.9 t/s        18.2 t/s        18.8 t/s        19.1 t/s        19.4 t/s
+
+   Average (Mean): 18.7 t/s
+   Standard Deviation: 0.5 t/s
+
+3. Input Token Count:
+       [───────────────|───────────────|───────────────|───────────────]
+      Min             P25        Median (P50)         P75             Max
+      204             327             450             566             683
+
+   Average (Mean): 446
+   Standard Deviation: 196
+
+4. Output Token Count:
+       [───────────────|───────────────|───────────────|───────────────]
+      Min             P25        Median (P50)         P75             Max
+      160             238             317             586             854
+
+   Average (Mean): 444
+   Standard Deviation: 297
+
+Request Summary
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Total Requests:    10
+Successful:        10 (100.00%)
+Failed:            0 (0.00%)
 ```
 
 ## License
