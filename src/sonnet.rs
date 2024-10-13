@@ -92,6 +92,10 @@ static SONNET_LINES: Lazy<Vec<&'static str>> = Lazy::new(|| {
 });
 
 /// Returns the shuffled lines from the Shakespeare sonnet.
+///
+/// # Returns
+///
+/// * `Vec<&'static str>` - A vector of shuffled sonnet lines
 pub fn get_shuffled_sonnet_lines() -> Vec<&'static str> {
     let mut rng = thread_rng();
     let mut lines = SONNET_LINES.clone();

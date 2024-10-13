@@ -12,39 +12,39 @@ pub struct PromptConfig {
 }
 
 /// Generates a prompt by sampling random lines from Shakespeare's sonnet.
+///
+/// # Arguments
+///
+/// * `config` - Configuration parameters for prompt generation.
+///
+/// # Returns
+///
+/// * `Result<String>` - The generated prompt, or an error if generation fails.
 pub fn generate_prompt(config: &PromptConfig) -> Result<String> {
     let mut rng = thread_rng();
 
-    // Create a Normal distribution for prompt length
     let token_dist = Normal::new(
         config.mean_input_tokens as f64,
         config.stddev_input_tokens as f64,
     )?;
 
-    // Sample a positive integer from the normal distribution for prompt length
     let mut num_prompt_tokens = sample_random_positive_int(&mut rng, &token_dist);
 
-    // Create the base prompt
     let mut prompt = format!(
         "Randomly stream lines from the following text with {} output tokens. Don't generate eos tokens:\n\n",
         config.mean_output_tokens
     );
 
-    // Count the number of tokens in the base prompt
     let base_token_count = count_tokens(&prompt)?;
 
-    // Ensure prompt length is at least as long as the base text
     while num_prompt_tokens < base_token_count {
         num_prompt_tokens = sample_random_positive_int(&mut rng, &token_dist);
     }
 
-    // Calculate remaining tokens available for sampled lines
     let mut remaining_prompt_tokens = num_prompt_tokens - base_token_count;
 
-    // Access shuffled sonnet lines
     let sonnet_lines = get_shuffled_sonnet_lines();
 
-    // Append lines to the prompt until reaching or exceeding the desired token count
     let mut sampling_lines = true;
     while sampling_lines {
         for line in &sonnet_lines {
@@ -68,6 +68,15 @@ pub fn generate_prompt(config: &PromptConfig) -> Result<String> {
 }
 
 /// Samples a random positive integer from a normal distribution.
+///
+/// # Arguments
+///
+/// * `rng` - A mutable reference to a random number generator
+/// * `dist` - A reference to a Normal distribution
+///
+/// # Returns
+///
+/// * `u32` - A random positive integer sampled from the given distribution.
 fn sample_random_positive_int<R: rand::Rng>(rng: &mut R, dist: &Normal<f64>) -> u32 {
     loop {
         let sample = dist.sample(rng);

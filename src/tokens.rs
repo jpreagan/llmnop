@@ -7,6 +7,15 @@ static TOKENIZER: Lazy<Tokenizer> = Lazy::new(|| {
         .expect("Failed to load Llama 2 tokenizer")
 });
 
+/// Counts the number of tokens in the given text using the Llama 2 tokenizer.
+///
+/// # Arguments
+///
+/// * `text` - The text to be tokenized
+///
+/// # Returns
+///
+/// * `Result<u32>` - The number of tokens in the text, or an error if tokenization fails
 pub fn count_tokens(text: &str) -> Result<u32> {
     let encoding = TOKENIZER
         .encode(text, false)
@@ -14,6 +23,16 @@ pub fn count_tokens(text: &str) -> Result<u32> {
     Ok(encoding.get_ids().len() as u32)
 }
 
+/// Truncates the given text to contain at most the specified number of tokens.
+///
+/// # Arguments
+///
+/// * `text` - The text to be truncated
+/// * `max_tokens` - The maximum number of tokens the truncated text should contain
+///
+/// # Returns
+///
+/// * `Result<String>` - The truncated text, or an error if tokenization fails
 pub fn truncate_to_token_count(text: &str, max_tokens: u32) -> Result<String> {
     let mut truncated = String::new();
 
