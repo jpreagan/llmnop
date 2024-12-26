@@ -20,11 +20,13 @@ async fn main() -> Result<()> {
         mean_input_tokens: args.mean_input_tokens,
         stddev_input_tokens: args.stddev_input_tokens,
         mean_output_tokens: args.mean_output_tokens,
+        stddev_output_tokens: args.stddev_output_tokens,
     };
 
-    let prompt = prompt::generate_prompt(&prompt_config)?;
+    let (prompt, target_output_tokens) = prompt::generate_prompt(&prompt_config)?;
 
-    let benchmark_result = benchmark::run_benchmark(&args.model, &prompt).await?;
+    let benchmark_result =
+        benchmark::run_benchmark(&args.model, &prompt, target_output_tokens).await?;
 
     let metrics = metrics::Metrics::from(benchmark_result);
 

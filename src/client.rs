@@ -13,6 +13,7 @@ use std::env;
 ///
 /// * `model` - The name of the model to use
 /// * `prompt` - The prompt to send to the model
+/// * `max_tokens` - Maximum number of tokens to generate
 ///
 /// # Returns
 ///
@@ -21,9 +22,10 @@ use std::env;
 pub async fn create_chat_completion_stream(
     model: &str,
     prompt: &str,
+    max_tokens: u32,
 ) -> Result<impl Stream<Item = Result<CreateChatCompletionStreamResponse, OpenAIError>>> {
     let api_key = env::var("OPENAI_API_KEY").map_err(|_| anyhow!("OPENAI_API_KEY not set"))?;
-    let api_base = env::var("OPENAI_BASE_URL").map_err(|_| anyhow!("OPENAI_BASE_URL not set"))?;
+    let api_base = env::var("OPENAI_API_BASE").map_err(|_| anyhow!("OPENAI_API_BASE not set"))?;
 
     let config = OpenAIConfig::new()
         .with_api_key(api_key)
@@ -32,6 +34,7 @@ pub async fn create_chat_completion_stream(
 
     let request = CreateChatCompletionRequestArgs::default()
         .model(model)
+        .max_tokens(max_tokens)
         .messages([ChatCompletionRequestUserMessageArgs::default()
             .content(prompt)
             .build()?

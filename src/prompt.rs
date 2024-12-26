@@ -9,6 +9,7 @@ pub struct PromptConfig {
     pub mean_input_tokens: u32,
     pub stddev_input_tokens: u32,
     pub mean_output_tokens: u32,
+    pub stddev_output_tokens: u32,
 }
 
 /// Generates a prompt by sampling random lines from Shakespeare's sonnet.
@@ -19,26 +20,32 @@ pub struct PromptConfig {
 ///
 /// # Returns
 ///
-/// * `Result<String>` - The generated prompt, or an error if generation fails.
-pub fn generate_prompt(config: &PromptConfig) -> Result<String> {
+/// * `Result<(String, u32)>` - A tuple containing the generated prompt and target output tokens
+pub fn generate_prompt(config: &PromptConfig) -> Result<(String, u32)> {
     let mut rng = thread_rng();
 
-    let token_dist = Normal::new(
+    let input_token_dist = Normal::new(
         config.mean_input_tokens as f64,
         config.stddev_input_tokens as f64,
     )?;
 
-    let mut num_prompt_tokens = sample_random_positive_int(&mut rng, &token_dist);
+    let output_token_dist = Normal::new(
+        config.mean_output_tokens as f64,
+        config.stddev_output_tokens as f64,
+    )?;
+
+    let target_output_tokens = sample_random_positive_int(&mut rng, &output_token_dist);
+    let mut num_prompt_tokens = sample_random_positive_int(&mut rng, &input_token_dist);
 
     let mut prompt = format!(
         "Randomly stream lines from the following text with {} output tokens. Don't generate eos tokens:\n\n",
-        config.mean_output_tokens
+        target_output_tokens
     );
 
     let base_token_count = count_tokens(&prompt)?;
 
     while num_prompt_tokens < base_token_count {
-        num_prompt_tokens = sample_random_positive_int(&mut rng, &token_dist);
+        num_prompt_tokens = sample_random_positive_int(&mut rng, &input_token_dist);
     }
 
     let mut remaining_prompt_tokens = num_prompt_tokens - base_token_count;
@@ -64,7 +71,7 @@ pub fn generate_prompt(config: &PromptConfig) -> Result<String> {
         }
     }
 
-    Ok(prompt)
+    Ok((prompt, target_output_tokens))
 }
 
 /// Samples a random positive integer from a normal distribution.
@@ -96,13 +103,12 @@ mod tests {
             mean_input_tokens: 100,
             stddev_input_tokens: 10,
             mean_output_tokens: 50,
+            stddev_output_tokens: 5,
         };
         let result = generate_prompt(&config);
         assert!(result.is_ok());
-        let prompt = result.unwrap();
-        assert!(
-            prompt.contains("Randomly stream lines from the following text with 50 output tokens")
-        );
+        let (prompt, target_tokens) = result.unwrap();
+        assert!(prompt.contains(&format!("with {} output tokens", target_tokens)));
         assert!(prompt.len() > 0);
     }
 
@@ -112,10 +118,11 @@ mod tests {
             mean_input_tokens: 500,
             stddev_input_tokens: 50,
             mean_output_tokens: 200,
+            stddev_output_tokens: 20,
         };
         let result = generate_prompt(&config);
         assert!(result.is_ok());
-        let prompt = result.unwrap();
+        let (prompt, _) = result.unwrap();
 
         let sonnet_lines = get_shuffled_sonnet_lines();
         let mut contains_sonnet_line = false;
