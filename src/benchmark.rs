@@ -1,5 +1,5 @@
 use crate::client::create_chat_completion_stream;
-use crate::tokens::count_tokens;
+use crate::tokens::TokenUtils;
 use anyhow::Result;
 use futures::StreamExt;
 use serde::Serialize;
@@ -15,7 +15,12 @@ pub struct BenchmarkResult {
     pub inter_token_latency: Vec<Duration>,
 }
 
-pub async fn run_benchmark(model: &str, prompt: &str, max_tokens: u32) -> Result<BenchmarkResult> {
+pub async fn run_benchmark(
+    model: &str,
+    prompt: &str,
+    max_tokens: u32,
+    token_utils: &TokenUtils,
+) -> Result<BenchmarkResult> {
     let start_time = Instant::now();
     let mut chunk_arrivals: Vec<(Instant, String)> = Vec::new();
 
@@ -29,15 +34,16 @@ pub async fn run_benchmark(model: &str, prompt: &str, max_tokens: u32) -> Result
         }
     }
 
-    process_chunk_arrivals(start_time, &chunk_arrivals, prompt)
+    process_chunk_arrivals(start_time, &chunk_arrivals, prompt, token_utils)
 }
 
 pub fn process_chunk_arrivals(
     start_time: Instant,
     arrivals: &[(Instant, String)],
     prompt: &str,
+    token_utils: &TokenUtils,
 ) -> Result<BenchmarkResult> {
-    let input_tokens = count_tokens(prompt)?;
+    let input_tokens = token_utils.count_tokens(prompt)?;
 
     let mut ttft = Duration::ZERO;
     let mut output_tokens = 0_u32;

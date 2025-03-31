@@ -11,10 +11,13 @@ use anyhow::Result;
 use args::Args;
 use clap::Parser;
 use prompt::PromptConfig;
+use tokens::TokenUtils;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
+
+    let token_utils = TokenUtils::new(&args.model)?;
 
     let prompt_config = PromptConfig {
         mean_input_tokens: args.mean_input_tokens,
@@ -23,10 +26,10 @@ async fn main() -> Result<()> {
         stddev_output_tokens: args.stddev_output_tokens,
     };
 
-    let (prompt, target_output_tokens) = prompt::generate_prompt(&prompt_config)?;
+    let (prompt, target_output_tokens) = prompt::generate_prompt(&prompt_config, &token_utils)?;
 
     let benchmark_result =
-        benchmark::run_benchmark(&args.model, &prompt, target_output_tokens).await?;
+        benchmark::run_benchmark(&args.model, &prompt, target_output_tokens, &token_utils).await?;
 
     let metrics = metrics::Metrics::from(benchmark_result);
 
