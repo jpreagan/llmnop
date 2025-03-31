@@ -7,18 +7,6 @@ use async_openai::{config::OpenAIConfig, error::OpenAIError, Client};
 use futures::Stream;
 use std::env;
 
-/// Creates a chat completion stream using the OpenAI API.
-///
-/// # Arguments
-///
-/// * `model` - The name of the model to use
-/// * `prompt` - The prompt to send to the model
-/// * `max_tokens` - Maximum number of tokens to generate
-///
-/// # Returns
-///
-/// * `Result<impl Stream<Item = Result<CreateChatCompletionStreamResponse, OpenAIError>>>` -
-///   A chat completion stream response, or an error if the API request fails.
 pub async fn create_chat_completion_stream(
     model: &str,
     prompt: &str,

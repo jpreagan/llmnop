@@ -1,14 +1,5 @@
 use crate::metrics::Metrics;
 
-/// Displays the benchmark results.
-///
-/// # Arguments
-///
-/// * `metrics` - A reference to a `Metrics` struct containing the benchmark results.
-///
-/// # Returns
-///
-/// This function doesn't return a value; it prints the results to stdout.
 pub fn display_results(metrics: &Metrics) {
     println!("Benchmark Results:");
     println!("------------------");

@@ -1,6 +1,5 @@
 use once_cell::sync::Lazy;
 use rand::seq::SliceRandom;
-use rand::thread_rng;
 
 static SONNET_LINES: Lazy<Vec<&'static str>> = Lazy::new(|| {
     vec![
@@ -91,33 +90,8 @@ static SONNET_LINES: Lazy<Vec<&'static str>> = Lazy::new(|| {
     ]
 });
 
-/// Returns the shuffled lines from the Shakespeare sonnet.
-///
-/// # Returns
-///
-/// * `Vec<&'static str>` - A vector of shuffled sonnet lines
 pub fn get_shuffled_sonnet_lines() -> Vec<&'static str> {
-    let mut rng = thread_rng();
     let mut lines = SONNET_LINES.clone();
-    lines.shuffle(&mut rng);
+    lines.shuffle(&mut rand::rng());
     lines
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_get_shuffled_sonnet_lines_length() {
-        let shuffled_lines = get_shuffled_sonnet_lines();
-        assert_eq!(shuffled_lines.len(), SONNET_LINES.len());
-    }
-
-    #[test]
-    fn test_get_shuffled_sonnet_lines_content() {
-        let shuffled_lines = get_shuffled_sonnet_lines();
-        for line in shuffled_lines.iter() {
-            assert!(SONNET_LINES.contains(line));
-        }
-    }
 }

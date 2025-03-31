@@ -15,59 +15,77 @@ pub struct BenchmarkResult {
     pub inter_token_latency: Vec<Duration>,
 }
 
-/// Runs a benchmark for the specified model and prompt.
-///
-/// # Arguments
-///
-/// * `model` - The name of the model to benchmark
-/// * `prompt` - The prompt to use in the benchmark
-/// * `max_tokens` - Maximum number of tokens to generate
-///
-/// # Returns
-///
-/// * `Result<BenchmarkResult>` - The results of the benchmark, or an error if the benchmark fails.
 pub async fn run_benchmark(model: &str, prompt: &str, max_tokens: u32) -> Result<BenchmarkResult> {
-    let mut ttft: Option<Duration> = None;
-    let mut inter_token_latency = Vec::new();
-    let mut tokens_received: u32 = 0;
-    let mut generated_text = String::new();
     let start_time = Instant::now();
-    let mut stream = create_chat_completion_stream(model, prompt, max_tokens).await?;
-    let mut last_token_time = start_time;
-    let input_token_count = count_tokens(prompt)?;
+    let mut chunk_arrivals: Vec<(Instant, String)> = Vec::new();
 
-    while let Some(result) = stream.next().await {
-        let response = result?;
+    let mut stream = create_chat_completion_stream(model, prompt, max_tokens).await?;
+    while let Some(response_result) = stream.next().await {
+        let response = response_result?;
         for choice in response.choices {
             if let Some(content) = choice.delta.content {
-                let now = Instant::now();
-                tokens_received += count_tokens(&content)?;
-
-                if ttft.is_none() {
-                    ttft = Some(now.duration_since(start_time));
-                } else {
-                    let latency = now.duration_since(last_token_time);
-                    inter_token_latency.push(latency);
-                }
-                last_token_time = now;
-                generated_text.push_str(&content);
+                chunk_arrivals.push((Instant::now(), content));
             }
         }
     }
 
-    let total_request_time = start_time.elapsed();
-    let throughput = if total_request_time.as_secs_f64() > 0.0 {
-        tokens_received as f64 / total_request_time.as_secs_f64()
+    process_chunk_arrivals(start_time, &chunk_arrivals, prompt)
+}
+
+pub fn process_chunk_arrivals(
+    start_time: Instant,
+    arrivals: &[(Instant, String)],
+    prompt: &str,
+) -> Result<BenchmarkResult> {
+    let input_tokens = count_tokens(prompt)?;
+
+    let mut ttft = Duration::ZERO;
+    let mut output_tokens = 0_u32;
+    let mut inter_token_latency = Vec::new();
+
+    if arrivals.is_empty() {
+        return Ok(BenchmarkResult {
+            ttft,
+            total_latency: Duration::ZERO,
+            throughput: 0.0,
+            input_tokens,
+            output_tokens,
+            inter_token_latency,
+        });
+    }
+
+    let mut last_time = start_time;
+    let mut first_non_empty_seen = false;
+    for (i, (arrive_time, chunk_text)) in arrivals.iter().enumerate() {
+        if !chunk_text.is_empty() {
+            output_tokens += 1;
+            if !first_non_empty_seen {
+                ttft = arrive_time.duration_since(start_time);
+                first_non_empty_seen = true;
+            }
+        }
+
+        if i > 0 {
+            let gap = arrive_time.duration_since(last_time);
+            inter_token_latency.push(gap);
+        }
+        last_time = *arrive_time;
+    }
+
+    let total_latency = last_time.duration_since(start_time);
+
+    let throughput = if total_latency.as_secs_f64() > 0.0 {
+        output_tokens as f64 / total_latency.as_secs_f64()
     } else {
         0.0
     };
 
     Ok(BenchmarkResult {
-        ttft: ttft.unwrap_or_else(|| Duration::from_secs(0)),
-        total_latency: total_request_time,
+        ttft,
+        total_latency,
         throughput,
-        input_tokens: input_token_count,
-        output_tokens: count_tokens(&generated_text)?,
+        input_tokens,
+        output_tokens,
         inter_token_latency,
     })
 }
