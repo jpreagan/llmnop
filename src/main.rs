@@ -10,6 +10,8 @@ mod tokens;
 use anyhow::Result;
 use args::Args;
 use clap::Parser;
+use metrics::Metrics;
+use output::display_results;
 use prompt::PromptConfig;
 use tokens::TokenUtils;
 
@@ -26,14 +28,28 @@ async fn main() -> Result<()> {
         stddev_output_tokens: args.stddev_output_tokens,
     };
 
-    let (prompt, target_output_tokens) = prompt::generate_prompt(&prompt_config, &token_utils)?;
+    let mut all_results = Vec::with_capacity(args.max_num_completed_requests as usize);
 
-    let benchmark_result =
-        benchmark::run_benchmark(&args.model, &prompt, target_output_tokens, &token_utils).await?;
+    for i in 0..args.max_num_completed_requests {
+        let (prompt, target_output_tokens) = prompt::generate_prompt(&prompt_config, &token_utils)?;
 
-    let metrics = metrics::Metrics::from(benchmark_result);
+        println!("--- Request #{} ---", i + 1);
+        println!(
+            "Approx Input Token Count: {}",
+            token_utils.count_tokens(&prompt)?
+        );
+        println!("Max Tokens to Generate  : {}", target_output_tokens);
 
-    output::display_results(&metrics);
+        let benchmark_result =
+            benchmark::run_benchmark(&args.model, &prompt, target_output_tokens, &token_utils)
+                .await?;
+
+        let metrics: Metrics = benchmark_result.as_metrics();
+
+        display_results(&metrics);
+
+        all_results.push(benchmark_result);
+    }
 
     Ok(())
 }

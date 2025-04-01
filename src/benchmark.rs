@@ -1,11 +1,12 @@
 use crate::client::create_chat_completion_stream;
+use crate::metrics::Metrics;
 use crate::tokens::TokenUtils;
 use anyhow::Result;
 use futures::StreamExt;
 use serde::Serialize;
 use std::time::{Duration, Instant};
 
-#[derive(Serialize, Debug)]
+#[derive(Debug, Clone, Serialize)]
 pub struct BenchmarkResult {
     pub ttft: Duration,
     pub total_latency: Duration,
@@ -13,6 +14,18 @@ pub struct BenchmarkResult {
     pub input_tokens: u32,
     pub output_tokens: u32,
     pub inter_token_latency: Vec<Duration>,
+}
+
+impl BenchmarkResult {
+    pub fn as_metrics(&self) -> Metrics {
+        Metrics {
+            ttft: self.ttft,
+            total_latency: self.total_latency,
+            throughput: self.throughput,
+            input_tokens: self.input_tokens,
+            output_tokens: self.output_tokens,
+        }
+    }
 }
 
 pub async fn run_benchmark(
@@ -37,7 +50,7 @@ pub async fn run_benchmark(
     process_chunk_arrivals(start_time, &chunk_arrivals, prompt, token_utils)
 }
 
-pub fn process_chunk_arrivals(
+fn process_chunk_arrivals(
     start_time: Instant,
     arrivals: &[(Instant, String)],
     prompt: &str,
@@ -62,6 +75,7 @@ pub fn process_chunk_arrivals(
 
     let mut last_time = start_time;
     let mut first_non_empty_seen = false;
+
     for (i, (arrive_time, chunk_text)) in arrivals.iter().enumerate() {
         if !chunk_text.is_empty() {
             output_tokens += 1;
