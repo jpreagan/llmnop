@@ -1,5 +1,4 @@
 use crate::client::create_chat_completion_stream;
-use crate::metrics::Metrics;
 use crate::tokens::TokenUtils;
 use anyhow::Result;
 use futures::StreamExt;
@@ -13,19 +12,7 @@ pub struct BenchmarkResult {
     pub throughput: f64,
     pub input_tokens: u32,
     pub output_tokens: u32,
-    pub inter_token_latency: Vec<Duration>,
-}
-
-impl BenchmarkResult {
-    pub fn as_metrics(&self) -> Metrics {
-        Metrics {
-            ttft: self.ttft,
-            total_latency: self.total_latency,
-            throughput: self.throughput,
-            input_tokens: self.input_tokens,
-            output_tokens: self.output_tokens,
-        }
-    }
+    pub inter_token_latency_s: f64,
 }
 
 pub async fn run_benchmark(
@@ -47,52 +34,57 @@ pub async fn run_benchmark(
         }
     }
 
-    process_chunk_arrivals(start_time, &chunk_arrivals, prompt, token_utils)
+    let end_time = Instant::now();
+    let input_tokens = token_utils.count_tokens(prompt)?;
+
+    Ok(process_chunk_arrivals(
+        start_time,
+        end_time,
+        &chunk_arrivals,
+        input_tokens,
+    ))
 }
 
 fn process_chunk_arrivals(
     start_time: Instant,
+    end_time: Instant,
     arrivals: &[(Instant, String)],
-    prompt: &str,
-    token_utils: &TokenUtils,
-) -> Result<BenchmarkResult> {
-    let input_tokens = token_utils.count_tokens(prompt)?;
-
+    input_tokens: u32,
+) -> BenchmarkResult {
     let mut ttft = Duration::ZERO;
     let mut output_tokens = 0_u32;
-    let mut inter_token_latency = Vec::new();
-
-    if arrivals.is_empty() {
-        return Ok(BenchmarkResult {
-            ttft,
-            total_latency: Duration::ZERO,
-            throughput: 0.0,
-            input_tokens,
-            output_tokens,
-            inter_token_latency,
-        });
-    }
-
+    let mut time_to_next_token = Vec::new();
     let mut last_time = start_time;
     let mut first_non_empty_seen = false;
 
-    for (i, (arrive_time, chunk_text)) in arrivals.iter().enumerate() {
-        if !chunk_text.is_empty() {
-            output_tokens += 1;
-            if !first_non_empty_seen {
-                ttft = arrive_time.duration_since(start_time);
-                first_non_empty_seen = true;
-            }
+    for (arrive_time, chunk_text) in arrivals.iter() {
+        if chunk_text.is_empty() {
+            continue;
         }
+        output_tokens += 1;
 
-        if i > 0 {
+        if !first_non_empty_seen {
+            ttft = arrive_time.duration_since(start_time);
+            time_to_next_token.push(ttft);
+            first_non_empty_seen = true;
+        } else {
             let gap = arrive_time.duration_since(last_time);
-            inter_token_latency.push(gap);
+            time_to_next_token.push(gap);
         }
         last_time = *arrive_time;
     }
 
-    let total_latency = last_time.duration_since(start_time);
+    let total_latency = end_time.duration_since(start_time);
+
+    let sum_time_to_next_token = time_to_next_token
+        .iter()
+        .fold(Duration::ZERO, |acc, &x| acc + x);
+
+    let inter_token_latency_s = if output_tokens > 0 {
+        sum_time_to_next_token.as_secs_f64() / output_tokens as f64
+    } else {
+        0.0
+    };
 
     let throughput = if total_latency.as_secs_f64() > 0.0 {
         output_tokens as f64 / total_latency.as_secs_f64()
@@ -100,12 +92,12 @@ fn process_chunk_arrivals(
         0.0
     };
 
-    Ok(BenchmarkResult {
+    BenchmarkResult {
         ttft,
         total_latency,
         throughput,
         input_tokens,
         output_tokens,
-        inter_token_latency,
-    })
+        inter_token_latency_s,
+    }
 }

@@ -44,7 +44,7 @@ async fn main() -> Result<()> {
             benchmark::run_benchmark(&args.model, &prompt, target_output_tokens, &token_utils)
                 .await?;
 
-        let metrics: Metrics = benchmark_result.as_metrics();
+        let metrics: Metrics = benchmark_result.clone().into();
 
         display_results(&metrics);
 
