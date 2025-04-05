@@ -9,6 +9,9 @@ pub struct Args {
     #[arg(long, default_value = "1")]
     pub max_num_completed_requests: u32,
 
+    #[arg(long, default_value = "1")]
+    pub num_concurrent_requests: u32,
+
     #[arg(long, default_value = "550")]
     pub mean_input_tokens: u32,
 

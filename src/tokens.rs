@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use tokenizers::Tokenizer;
 
+#[derive(Clone)]
 pub struct TokenUtils {
     tokenizer: Tokenizer,
 }
