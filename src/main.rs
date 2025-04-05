@@ -13,13 +13,16 @@ use benchmark::run_benchmark;
 use clap::Parser;
 use futures::{stream::FuturesUnordered, StreamExt};
 use metrics::Metrics;
-use output::display_results;
+use output::{display_results, write_results_json};
 use prompt::{generate_prompt, PromptConfig};
+use std::time::Instant;
 use tokens::TokenUtils;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
+
+    let overall_start = Instant::now();
 
     let token_utils = TokenUtils::new(&args.model)?;
 
@@ -39,21 +42,18 @@ async fn main() -> Result<()> {
     let mut all_results = Vec::with_capacity(args.max_num_completed_requests as usize);
 
     let mut in_flight = FuturesUnordered::new();
-
     let mut next_request_index = 0;
 
     while next_request_index < args.max_num_completed_requests
         && in_flight.len() < args.num_concurrent_requests as usize
     {
         let (ref prompt, max_tokens) = prompts_and_max_tokens[next_request_index as usize];
-
         let model_name = args.model.clone();
         let prompt_clone = prompt.clone();
         let token_utils_clone = token_utils.clone();
         in_flight.push(tokio::spawn(async move {
             run_benchmark(&model_name, &prompt_clone, max_tokens, &token_utils_clone).await
         }));
-
         next_request_index += 1;
     }
 
@@ -68,7 +68,6 @@ async fn main() -> Result<()> {
             in_flight.push(tokio::spawn(async move {
                 run_benchmark(&model_name, &prompt_clone, max_tokens, &token_utils_clone).await
             }));
-
             next_request_index += 1;
         }
 
@@ -77,18 +76,36 @@ async fn main() -> Result<()> {
                 Ok(Ok(benchmark_result)) => {
                     let metrics: Metrics = benchmark_result.clone().into();
                     display_results(&metrics);
-                    all_results.push(benchmark_result);
+                    all_results.push(Ok(benchmark_result));
                 }
                 Ok(Err(e)) => {
                     eprintln!("Request failed: {:?}", e);
+                    all_results.push(Err(e.to_string()));
                 }
                 Err(tokio_err) => {
                     eprintln!("Tokio Join Error: {:?}", tokio_err);
+                    all_results.push(Err(format!("Tokio Join Error: {:?}", tokio_err)));
                 }
             }
         }
     }
 
+    let overall_end = Instant::now();
+
     println!("\nAll requests completed. Total: {}", all_results.len());
+
+    write_results_json(
+        &args.results_dir,
+        &args.model,
+        args.mean_input_tokens,
+        args.stddev_input_tokens,
+        args.mean_output_tokens,
+        args.stddev_output_tokens,
+        args.num_concurrent_requests,
+        &all_results,
+        overall_start,
+        overall_end,
+    )?;
+
     Ok(())
 }

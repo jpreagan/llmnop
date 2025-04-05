@@ -23,4 +23,7 @@ pub struct Args {
 
     #[arg(long, default_value = "10")]
     pub stddev_output_tokens: u32,
+
+    #[arg(long, default_value = "")]
+    pub results_dir: String,
 }
