@@ -19,7 +19,7 @@ impl From<BenchmarkResult> for Metrics {
             request_output_throughput_token_per_s: br.throughput,
             number_input_tokens: br.input_tokens,
             number_output_tokens: br.output_tokens,
-            number_total_tokens: br.input_tokens + br.output_tokens,
+            number_total_tokens: br.total_tokens,
             inter_token_latency_s: br.inter_token_latency_s,
         }
     }

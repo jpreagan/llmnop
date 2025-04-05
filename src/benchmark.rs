@@ -13,6 +13,7 @@ pub struct BenchmarkResult {
     pub input_tokens: u32,
     pub output_tokens: u32,
     pub inter_token_latency_s: f64,
+    pub total_tokens: u32,
 }
 
 pub async fn run_benchmark(
@@ -75,7 +76,6 @@ fn process_chunk_arrivals(
     }
 
     let total_latency = end_time.duration_since(start_time);
-
     let sum_time_to_next_token = time_to_next_token
         .iter()
         .fold(Duration::ZERO, |acc, &x| acc + x);
@@ -92,6 +92,8 @@ fn process_chunk_arrivals(
         0.0
     };
 
+    let total_tokens = input_tokens + output_tokens;
+
     BenchmarkResult {
         ttft,
         total_latency,
@@ -99,5 +101,6 @@ fn process_chunk_arrivals(
         input_tokens,
         output_tokens,
         inter_token_latency_s,
+        total_tokens,
     }
 }

@@ -985,6 +985,7 @@ dependencies = [
  "async-openai",
  "clap",
  "futures",
+ "indicatif",
  "once_cell",
  "rand 0.9.0",
  "rand_distr",
