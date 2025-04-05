@@ -14,8 +14,9 @@ use clap::Parser;
 use futures::{stream::FuturesUnordered, StreamExt};
 use indicatif::{ProgressBar, ProgressStyle};
 use prompt::{generate_prompt, PromptConfig};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokens::TokenUtils;
+use tokio::time;
 
 use output::write_results_json;
 
@@ -53,6 +54,12 @@ async fn main() -> Result<()> {
             .progress_chars("##-"),
     );
 
+    let timeout_duration = Duration::from_secs(args.timeout);
+    let timeout_future = time::sleep(timeout_duration);
+    let mut timeout_occurred = false;
+
+    tokio::pin!(timeout_future);
+
     while next_request_index < args.max_num_completed_requests
         && in_flight.len() < args.num_concurrent_requests as usize
     {
@@ -67,43 +74,65 @@ async fn main() -> Result<()> {
         next_request_index += 1;
     }
 
-    while !in_flight.is_empty() || next_request_index < args.max_num_completed_requests {
-        while next_request_index < args.max_num_completed_requests
-            && in_flight.len() < args.num_concurrent_requests as usize
-        {
-            let (ref prompt, max_tokens) = prompts_and_max_tokens[next_request_index as usize];
-            let model_name = args.model.clone();
-            let prompt_clone = prompt.clone();
-            let token_utils_clone = token_utils.clone();
+    loop {
+        tokio::select! {
+            _ = &mut timeout_future, if !timeout_occurred => {
+                println!("\nTimeout reached after {} seconds. Collecting completed results...", args.timeout);
+                timeout_occurred = true;
+            }
 
-            in_flight.push(tokio::spawn(async move {
-                run_benchmark(&model_name, &prompt_clone, max_tokens, &token_utils_clone).await
-            }));
-            next_request_index += 1;
-        }
+            Some(done) = in_flight.next(), if !in_flight.is_empty() => {
+                match done {
+                    Ok(Ok(benchmark_result)) => {
+                        all_results.push(Ok(benchmark_result));
+                    }
+                    Ok(Err(e)) => {
+                        eprintln!("Request failed: {:?}", e);
+                        all_results.push(Err(e.to_string()));
+                    }
+                    Err(tokio_err) => {
+                        eprintln!("Tokio Join Error: {:?}", tokio_err);
+                        all_results.push(Err(format!("Tokio Join Error: {:?}", tokio_err)));
+                    }
+                }
 
-        if let Some(done) = in_flight.next().await {
-            match done {
-                Ok(Ok(benchmark_result)) => {
-                    all_results.push(Ok(benchmark_result));
-                }
-                Ok(Err(e)) => {
-                    eprintln!("Request failed: {:?}", e);
-                    all_results.push(Err(e.to_string()));
-                }
-                Err(tokio_err) => {
-                    eprintln!("Tokio Join Error: {:?}", tokio_err);
-                    all_results.push(Err(format!("Tokio Join Error: {:?}", tokio_err)));
+                pb.inc(1);
+
+                if !timeout_occurred && next_request_index < args.max_num_completed_requests {
+                    let (ref prompt, max_tokens) = prompts_and_max_tokens[next_request_index as usize];
+                    let model_name = args.model.clone();
+                    let prompt_clone = prompt.clone();
+                    let token_utils_clone = token_utils.clone();
+
+                    in_flight.push(tokio::spawn(async move {
+                        run_benchmark(&model_name, &prompt_clone, max_tokens, &token_utils_clone).await
+                    }));
+                    next_request_index += 1;
                 }
             }
 
-            pb.inc(1);
+            _ = async {}, if in_flight.is_empty() => {
+                break;
+            }
+        }
+
+        if all_results.len() >= args.max_num_completed_requests as usize {
+            break;
         }
     }
 
     pb.finish_and_clear();
 
     let overall_end = Instant::now();
+    if timeout_occurred {
+        println!(
+            "Benchmark completed due to timeout after {} seconds. Collected {} results out of {} requested.",
+            args.timeout,
+            all_results.len(),
+            args.max_num_completed_requests
+        );
+    }
+
     write_results_json(
         &args.results_dir,
         &args.model,

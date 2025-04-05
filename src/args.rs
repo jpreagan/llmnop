@@ -26,4 +26,7 @@ pub struct Args {
 
     #[arg(long, default_value = "")]
     pub results_dir: String,
+
+    #[arg(long, default_value = "600")]
+    pub timeout: u64,
 }
