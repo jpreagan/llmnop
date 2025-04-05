@@ -254,10 +254,11 @@ pub fn write_results_json(
     {
         let file_name = format!(
             "{}_{}_{}_individual_responses.json",
-            sanitize_filename(model),
+            sanitize_filename::sanitize(model),
             mean_input_tokens,
             mean_output_tokens
         );
+
         let path = Path::new(results_dir).join(file_name);
         let mut f = File::create(&path)?;
         let resp_json = serde_json::to_string_pretty(&individual_responses)?;
@@ -267,7 +268,7 @@ pub fn write_results_json(
     {
         let summary_filename = format!(
             "{}_{}_{}_summary.json",
-            sanitize_filename(model),
+            sanitize_filename::sanitize(model),
             mean_input_tokens,
             mean_output_tokens
         );
