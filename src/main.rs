@@ -62,6 +62,7 @@ async fn main() -> Result<()> {
             .unwrap()
             .progress_chars("##-"),
     );
+    pb.tick();
 
     let timeout_duration = Duration::from_secs(args.timeout);
     let timeout_future = time::sleep(timeout_duration);
