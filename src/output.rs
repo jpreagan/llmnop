@@ -254,7 +254,7 @@ pub fn write_results_json(
     {
         let file_name = format!(
             "{}_{}_{}_individual_responses.json",
-            sanitize_filename::sanitize(model),
+            sanitize_filename::sanitize(model.replace('/', "-").replace('.', "-")),
             mean_input_tokens,
             mean_output_tokens
         );
@@ -268,7 +268,7 @@ pub fn write_results_json(
     {
         let summary_filename = format!(
             "{}_{}_{}_summary.json",
-            sanitize_filename::sanitize(model),
+            sanitize_filename::sanitize(model.replace('/', "-").replace('.', "-")),
             mean_input_tokens,
             mean_output_tokens
         );
@@ -373,7 +373,7 @@ fn build_flattened_summary(
         version: "2023-08-31".to_string(),
         name: format!(
             "{}_{}_{}_summary",
-            sanitize_filename(model),
+            sanitize_filename::sanitize(model.replace('/', "-").replace('.', "-")),
             mean_input_tokens,
             mean_output_tokens
         ),
@@ -519,11 +519,4 @@ fn percentile(sorted_values: &[f64], pct: f64) -> f64 {
     }
     let idx = ((sorted_values.len() - 1) as f64 * pct).floor() as usize;
     sorted_values[idx]
-}
-
-fn sanitize_filename(model: &str) -> String {
-    let re = regex::Regex::new(r"[^\w\d-]+").unwrap();
-    let re_dupes = regex::Regex::new(r"-{2,}").unwrap();
-    let tmp = re.replace_all(model, "-");
-    re_dupes.replace_all(&tmp, "-").to_string()
 }
