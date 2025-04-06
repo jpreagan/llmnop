@@ -16,7 +16,6 @@ use indicatif::{ProgressBar, ProgressStyle};
 use prompt::{generate_prompt, PromptConfig};
 use std::env;
 use std::time::{Duration, Instant};
-use tokens::TokenUtils;
 use tokio::time;
 
 use output::write_results_json;
@@ -35,7 +34,9 @@ async fn main() -> Result<()> {
 
     let overall_start = Instant::now();
 
-    let token_utils = TokenUtils::new(&args.model)?;
+    tokens::initialize_tokenizer(&args.model)
+        .map_err(|e| anyhow!("Failed to initialize tokenizers: {}", e))?;
+    println!("Tokenizers initialized successfully.");
 
     let prompt_config = PromptConfig {
         mean_input_tokens: args.mean_input_tokens,
@@ -46,7 +47,7 @@ async fn main() -> Result<()> {
 
     let mut prompts_and_max_tokens = Vec::with_capacity(args.max_num_completed_requests as usize);
     for _ in 0..args.max_num_completed_requests {
-        let (prompt, target_output_tokens) = generate_prompt(&prompt_config, &token_utils)?;
+        let (prompt, target_output_tokens) = generate_prompt(&prompt_config)?;
         prompts_and_max_tokens.push((prompt, target_output_tokens));
     }
 
@@ -76,10 +77,9 @@ async fn main() -> Result<()> {
         let (ref prompt, max_tokens) = prompts_and_max_tokens[next_request_index as usize];
         let model_name = args.model.clone();
         let prompt_clone = prompt.clone();
-        let token_utils_clone = token_utils.clone();
 
         in_flight.push(tokio::spawn(async move {
-            run_benchmark(&model_name, &prompt_clone, max_tokens, &token_utils_clone).await
+            run_benchmark(&model_name, &prompt_clone, max_tokens).await
         }));
         next_request_index += 1;
     }
@@ -112,10 +112,9 @@ async fn main() -> Result<()> {
                     let (ref prompt, max_tokens) = prompts_and_max_tokens[next_request_index as usize];
                     let model_name = args.model.clone();
                     let prompt_clone = prompt.clone();
-                    let token_utils_clone = token_utils.clone();
 
                     in_flight.push(tokio::spawn(async move {
-                        run_benchmark(&model_name, &prompt_clone, max_tokens, &token_utils_clone).await
+                        run_benchmark(&model_name, &prompt_clone, max_tokens).await
                     }));
                     next_request_index += 1;
                 }
@@ -136,10 +135,8 @@ async fn main() -> Result<()> {
     let overall_end = Instant::now();
     if timeout_occurred {
         println!(
-            "Benchmark completed due to timeout after {} seconds. Collected {} results out of {} requested.",
-            args.timeout,
-            all_results.len(),
-            args.max_num_completed_requests
+            "Benchmark terminated due to timeout after {} seconds.",
+            args.timeout
         );
     }
 
@@ -156,5 +153,6 @@ async fn main() -> Result<()> {
         overall_end,
     )?;
 
+    println!("Benchmark complete!");
     Ok(())
 }
