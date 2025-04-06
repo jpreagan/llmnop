@@ -101,3 +101,105 @@ fn process_benchmark_data(
         total_tokens,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn test_process_benchmark_data_single_arrival() {
+        let now = Instant::now();
+        let start_time = now;
+        let first_token_time = now + Duration::from_millis(500);
+        let end_time = first_token_time;
+
+        let arrivals = vec![(first_token_time, "hello".to_string())];
+        let input_tokens = 10;
+        let output_tokens = 5;
+        let total_tokens = input_tokens + output_tokens;
+
+        let result = process_benchmark_data(
+            start_time,
+            end_time,
+            &arrivals,
+            input_tokens,
+            output_tokens,
+            total_tokens,
+        );
+
+        assert_eq!(result.ttft, Duration::from_millis(500));
+        assert_eq!(result.total_latency, Duration::from_millis(500));
+        assert_eq!(result.throughput, 10.0);
+        assert_eq!(result.input_tokens, 10);
+        assert_eq!(result.output_tokens, 5);
+        assert_eq!(result.total_tokens, 15);
+        assert_eq!(result.inter_token_latency_s, 0.5);
+    }
+
+    #[test]
+    fn test_process_benchmark_data_multiple_arrivals() {
+        let now = Instant::now();
+        let start_time = now;
+        let arr1 = now + Duration::from_millis(64);
+        let arr2 = now + Duration::from_millis(128);
+        let arr3 = now + Duration::from_millis(192);
+        let end_time = arr3;
+
+        let arrivals = vec![
+            (arr1, "hello".to_string()),
+            (arr2, "world".to_string()),
+            (arr3, "!".to_string()),
+        ];
+
+        let input_tokens = 10;
+        let output_tokens = 3;
+        let total_tokens = input_tokens + output_tokens;
+
+        let result = process_benchmark_data(
+            start_time,
+            end_time,
+            &arrivals,
+            input_tokens,
+            output_tokens,
+            total_tokens,
+        );
+
+        assert_eq!(result.ttft, Duration::from_millis(64));
+        assert_eq!(result.total_latency, Duration::from_millis(192));
+        assert_eq!(result.throughput, 15.625);
+        assert_eq!(result.input_tokens, 10);
+        assert_eq!(result.output_tokens, 3);
+        assert_eq!(result.total_tokens, 13);
+        assert_eq!(result.inter_token_latency_s, 0.064);
+    }
+
+    #[test]
+    fn test_process_benchmark_data_zero_duration() {
+        let now = Instant::now();
+        let start_time = now;
+        let end_time = now;
+
+        let arrivals = vec![];
+        let input_tokens = 10;
+        let output_tokens = 0;
+        let total_tokens = input_tokens + output_tokens;
+
+        let result = process_benchmark_data(
+            start_time,
+            end_time,
+            &arrivals,
+            input_tokens,
+            output_tokens,
+            total_tokens,
+        );
+
+        assert_eq!(result.ttft, Duration::ZERO);
+        assert_eq!(result.total_latency, Duration::ZERO);
+        assert_eq!(result.throughput, 0.0);
+        assert_eq!(result.input_tokens, 10);
+        assert_eq!(result.output_tokens, 0);
+        assert_eq!(result.total_tokens, 10);
+        assert_eq!(result.inter_token_latency_s, 0.0);
+    }
+}
