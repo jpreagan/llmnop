@@ -7,13 +7,14 @@ mod prompt;
 mod sonnet;
 mod tokens;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use args::Args;
 use benchmark::run_benchmark;
 use clap::Parser;
 use futures::{stream::FuturesUnordered, StreamExt};
 use indicatif::{ProgressBar, ProgressStyle};
 use prompt::{generate_prompt, PromptConfig};
+use std::env;
 use std::time::{Duration, Instant};
 use tokens::TokenUtils;
 use tokio::time;
@@ -23,6 +24,14 @@ use output::write_results_json;
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
+
+    if env::var("OPENAI_API_KEY").is_err() {
+        return Err(anyhow!("OPENAI_API_KEY environment variable not set."));
+    }
+
+    if env::var("OPENAI_API_BASE").is_err() {
+        return Err(anyhow!("OPENAI_API_BASE environment variable not set."));
+    }
 
     let overall_start = Instant::now();
 
