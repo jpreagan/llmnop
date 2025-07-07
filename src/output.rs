@@ -520,3 +520,70 @@ fn percentile(sorted_values: &[f64], pct: f64) -> f64 {
     let idx = ((sorted_values.len() - 1) as f64 * pct).floor() as usize;
     sorted_values[idx]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_percentile_behavior() {
+        let values = vec![5.0, 10.0, 15.0, 20.0, 25.0];
+
+        assert!(percentile(&values, 0.0) <= percentile(&values, 0.25));
+        assert!(percentile(&values, 0.25) <= percentile(&values, 0.5));
+        assert!(percentile(&values, 0.5) <= percentile(&values, 0.75));
+        assert!(percentile(&values, 0.75) <= percentile(&values, 1.0));
+
+        assert_eq!(percentile(&values, 0.0), 5.0);
+        assert_eq!(percentile(&values, 1.0), 25.0);
+
+        assert_eq!(
+            percentile(&[], 0.5),
+            0.0,
+            "Empty array should return default value"
+        );
+        assert_eq!(
+            percentile(&[42.0], 0.5),
+            42.0,
+            "Single-element array should return that element"
+        );
+    }
+
+    #[test]
+    fn test_stats_basic_properties() {
+        let values = vec![5.0, 10.0, 15.0, 20.0, 25.0];
+
+        let stats = compute_stats_for_flatten(&values);
+
+        assert!(stats.min <= stats.q25, "Min should be <= 25th percentile");
+        assert!(
+            stats.q25 <= stats.q50,
+            "25th percentile should be <= median"
+        );
+        assert!(
+            stats.q50 <= stats.q75,
+            "Median should be <= 75th percentile"
+        );
+        assert!(stats.q75 <= stats.max, "75th percentile should be <= max");
+
+        assert!(
+            stats.stddev >= 0.0,
+            "Standard deviation should be non-negative"
+        );
+
+        assert!(
+            (stats.mean - stats.q50).abs() < 0.001,
+            "For symmetric distribution, mean and median should be very close"
+        );
+
+        let empty_stats = compute_stats_for_flatten(&[]);
+        assert_eq!(
+            empty_stats.min, 0.0,
+            "Empty array should have default values"
+        );
+        assert_eq!(
+            empty_stats.max, 0.0,
+            "Empty array should have default values"
+        );
+    }
+}
