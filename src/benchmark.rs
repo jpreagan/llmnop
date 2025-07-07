@@ -66,7 +66,6 @@ fn process_benchmark_data(
     for (arrive_time, _) in arrivals.iter() {
         if !first_non_empty_seen {
             ttft = arrive_time.duration_since(start_time);
-            time_to_next_token.push(ttft);
             first_non_empty_seen = true;
         } else {
             let gap = arrive_time.duration_since(last_time);
@@ -79,8 +78,8 @@ fn process_benchmark_data(
 
     let sum_time_to_next_token: Duration = time_to_next_token.iter().sum();
 
-    let inter_token_latency_s = if !arrivals.is_empty() {
-        sum_time_to_next_token.as_secs_f64() / arrivals.len() as f64
+    let inter_token_latency_s = if !time_to_next_token.is_empty() {
+        sum_time_to_next_token.as_secs_f64() / time_to_next_token.len() as f64
     } else {
         0.0
     };
@@ -108,36 +107,6 @@ mod tests {
     use std::time::{Duration, Instant};
 
     #[test]
-    fn test_process_benchmark_data_single_arrival() {
-        let now = Instant::now();
-        let start_time = now;
-        let first_token_time = now + Duration::from_millis(500);
-        let end_time = first_token_time;
-
-        let arrivals = vec![(first_token_time, "hello".to_string())];
-        let input_tokens = 10;
-        let output_tokens = 5;
-        let total_tokens = input_tokens + output_tokens;
-
-        let result = process_benchmark_data(
-            start_time,
-            end_time,
-            &arrivals,
-            input_tokens,
-            output_tokens,
-            total_tokens,
-        );
-
-        assert_eq!(result.ttft, Duration::from_millis(500));
-        assert_eq!(result.total_latency, Duration::from_millis(500));
-        assert_eq!(result.throughput, 10.0);
-        assert_eq!(result.input_tokens, 10);
-        assert_eq!(result.output_tokens, 5);
-        assert_eq!(result.total_tokens, 15);
-        assert_eq!(result.inter_token_latency_s, 0.5);
-    }
-
-    #[test]
     fn test_process_benchmark_data_multiple_arrivals() {
         let now = Instant::now();
         let start_time = now;
@@ -148,7 +117,7 @@ mod tests {
 
         let arrivals = vec![
             (arr1, "hello".to_string()),
-            (arr2, "world".to_string()),
+            (arr2, " world".to_string()),
             (arr3, "!".to_string()),
         ];
 
@@ -171,7 +140,69 @@ mod tests {
         assert_eq!(result.input_tokens, 10);
         assert_eq!(result.output_tokens, 3);
         assert_eq!(result.total_tokens, 13);
+        // Gap 1: 128-64 = 64ms, Gap 2: 192-128 = 64ms -> Average: 64ms = 0.064s
         assert_eq!(result.inter_token_latency_s, 0.064);
+    }
+
+    #[test]
+    fn test_ttft_not_included_in_inter_token_latency() {
+        let start_time = Instant::now();
+        let ttft_delay = Duration::from_millis(1000);
+        let inter_token_gap = Duration::from_millis(100);
+
+        // Mock chunk arrivals: first token after 1s, then 2 more tokens with 100ms gaps
+        let arrivals = vec![
+            (start_time + ttft_delay, "Hello".to_string()),
+            (
+                start_time + ttft_delay + inter_token_gap,
+                " world".to_string(),
+            ),
+            (
+                start_time + ttft_delay + inter_token_gap * 2,
+                "!".to_string(),
+            ),
+        ];
+
+        let end_time = start_time + ttft_delay + inter_token_gap * 2;
+
+        let result = process_benchmark_data(start_time, end_time, &arrivals, 10, 3, 13);
+
+        assert_eq!(result.ttft, Duration::from_millis(1000));
+
+        // Inter-token latency should only include the 2 gaps between tokens (100ms each)
+        // Gap 1: 100ms, Gap 2: 100ms -> Average: 100ms = 0.1s
+        assert_eq!(result.inter_token_latency_s, 0.1);
+    }
+
+    #[test]
+    fn test_single_token_response() {
+        let start_time = Instant::now();
+        let ttft_delay = Duration::from_millis(1000);
+
+        let arrivals = vec![(start_time + ttft_delay, "Hello".to_string())];
+
+        let end_time = start_time + ttft_delay;
+
+        let result = process_benchmark_data(start_time, end_time, &arrivals, 5, 1, 6);
+
+        assert_eq!(result.ttft, Duration::from_millis(1000));
+
+        // No inter-token latency since there's only one token
+        assert_eq!(result.inter_token_latency_s, 0.0);
+    }
+
+    #[test]
+    fn test_empty_response() {
+        let start_time = Instant::now();
+        let end_time = start_time + Duration::from_millis(100);
+
+        let arrivals = vec![];
+
+        let result = process_benchmark_data(start_time, end_time, &arrivals, 5, 0, 5);
+
+        assert_eq!(result.ttft, Duration::ZERO);
+
+        assert_eq!(result.inter_token_latency_s, 0.0);
     }
 
     #[test]
