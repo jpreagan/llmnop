@@ -36,8 +36,8 @@ pub async fn run_benchmark(model: &str, prompt: &str, max_tokens: u32) -> Result
 
     let end_time = Instant::now();
 
-    let input_tokens = tokens::count_tokens(prompt)?;
-    let output_tokens = tokens::count_tokens(&generated_text)?;
+    let input_tokens = tokens::count_tokens(prompt, model)?;
+    let output_tokens = tokens::count_tokens(&generated_text, model)?;
     let total_tokens = input_tokens + output_tokens;
 
     Ok(process_benchmark_data(

@@ -1,25 +1,33 @@
-use anyhow::Result;
-use once_cell::sync::OnceCell;
+use anyhow::{anyhow, Result};
+use once_cell::sync::Lazy;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use tokenizers::Tokenizer;
 
-fn llama_tokenizer() -> Result<&'static Tokenizer> {
-    static INSTANCE: OnceCell<Tokenizer> = OnceCell::new();
-    INSTANCE.get_or_try_init(|| {
-        let tokenizer = Tokenizer::from_pretrained("hf-internal-testing/llama-tokenizer", None)
-            .map_err(|e| anyhow::anyhow!("Failed to load Llama tokenizer: {}", e))?;
-        Ok(tokenizer)
-    })
+static TOKENIZER_CACHE: Lazy<Mutex<HashMap<String, Arc<Tokenizer>>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
+fn get_tokenizer(model_name: &str) -> Result<Arc<Tokenizer>> {
+    let mut cache = TOKENIZER_CACHE.lock().unwrap();
+
+    if let Some(tokenizer) = cache.get(model_name) {
+        return Ok(tokenizer.clone());
+    }
+
+    let tokenizer = Tokenizer::from_pretrained(model_name, None)
+        .map_err(|e| anyhow!("Failed to load tokenizer for '{}': {}", model_name, e))?;
+
+    let tokenizer_arc = Arc::new(tokenizer);
+    cache.insert(model_name.to_string(), tokenizer_arc.clone());
+
+    Ok(tokenizer_arc)
 }
 
-pub fn initialize_tokenizer(_model_name: &str) -> Result<()> {
-    llama_tokenizer().map(|_| ())
-}
-
-pub fn count_tokens(text: &str) -> Result<u32> {
-    let tokenizer = llama_tokenizer()?;
+pub fn count_tokens(text: &str, model_name: &str) -> Result<u32> {
+    let tokenizer = get_tokenizer(model_name)?;
     let encoding = tokenizer
         .encode(text, false)
-        .map_err(|e| anyhow::anyhow!("Tokenization error: {}", e))?;
+        .map_err(|e| anyhow!("Tokenization error for model '{}': {}", model_name, e))?;
     Ok(encoding.get_ids().len() as u32)
 }
 
@@ -55,18 +63,19 @@ pub fn find_largest_prefix_index(
     Ok(if low > 0 { low - 1 } else { 0 })
 }
 
-pub fn truncate_to_token_count(text: &str, max_tokens: u32) -> Result<String> {
+pub fn truncate_to_token_count(text: &str, max_tokens: u32, model_name: &str) -> Result<String> {
     if text.is_empty() || max_tokens == 0 {
         return Ok(String::new());
     }
 
-    let total_tokens = count_tokens(text)?;
+    let total_tokens = count_tokens(text, model_name)?;
     if total_tokens <= max_tokens {
         return Ok(text.to_string());
     }
 
-    let max_index =
-        find_largest_prefix_index(text, |prefix| Ok(count_tokens(prefix)? <= max_tokens))?;
+    let max_index = find_largest_prefix_index(text, |prefix| {
+        Ok(count_tokens(prefix, model_name)? <= max_tokens)
+    })?;
 
     Ok(text.chars().take(max_index).collect())
 }
@@ -75,19 +84,24 @@ pub fn truncate_to_token_count(text: &str, max_tokens: u32) -> Result<String> {
 mod tests {
     use super::*;
 
+    const TEST_TOKENIZER: &str = "hf-internal-testing/llama-tokenizer";
+
     #[test]
     fn test_truncate_to_token_count() {
-        assert_eq!(truncate_to_token_count("", 10).unwrap(), "");
+        assert_eq!(truncate_to_token_count("", 10, TEST_TOKENIZER).unwrap(), "");
 
         let short_text = "Hello world";
-        let short_token_count = count_tokens(short_text).unwrap();
+        let short_token_count = count_tokens(short_text, TEST_TOKENIZER).unwrap();
         assert!(short_token_count < 10);
-        assert_eq!(truncate_to_token_count(short_text, 10).unwrap(), short_text);
+        assert_eq!(
+            truncate_to_token_count(short_text, 10, TEST_TOKENIZER).unwrap(),
+            short_text
+        );
 
         let long_text =
             "Shall I compare thee to a summer's day? Thou art more lovely and more temperate.";
-        let truncated = truncate_to_token_count(long_text, 5).unwrap();
-        assert!(count_tokens(&truncated).unwrap() <= 5);
+        let truncated = truncate_to_token_count(long_text, 5, TEST_TOKENIZER).unwrap();
+        assert!(count_tokens(&truncated, TEST_TOKENIZER).unwrap() <= 5);
         assert!(long_text.starts_with(&truncated));
     }
 
@@ -103,16 +117,16 @@ mod tests {
 
         let token_limit = 5;
         let result = find_largest_prefix_index(text, |prefix| {
-            Ok(count_tokens(prefix).unwrap() <= token_limit)
+            Ok(count_tokens(prefix, TEST_TOKENIZER).unwrap() <= token_limit)
         })
         .unwrap();
 
         let found_prefix: String = text.chars().take(result).collect();
-        assert!(count_tokens(&found_prefix).unwrap() <= token_limit);
+        assert!(count_tokens(&found_prefix, TEST_TOKENIZER).unwrap() <= token_limit);
 
         if result < text.chars().count() {
             let next_prefix: String = text.chars().take(result + 1).collect();
-            assert!(count_tokens(&next_prefix).unwrap() > token_limit);
+            assert!(count_tokens(&next_prefix, TEST_TOKENIZER).unwrap() > token_limit);
         }
     }
 }

@@ -34,9 +34,8 @@ async fn main() -> Result<()> {
 
     let overall_start = Instant::now();
 
-    tokens::initialize_tokenizer(&args.model)
-        .map_err(|e| anyhow!("Failed to initialize tokenizers: {}", e))?;
-    println!("Tokenizers initialized successfully.");
+    println!("Using model: {}", &args.model);
+    println!("Tokenizers will be downloaded from Hugging Face Hub and cached on first use.");
 
     let prompt_config = PromptConfig {
         mean_input_tokens: args.mean_input_tokens,
@@ -47,7 +46,7 @@ async fn main() -> Result<()> {
 
     let mut prompts_and_max_tokens = Vec::with_capacity(args.max_num_completed_requests as usize);
     for _ in 0..args.max_num_completed_requests {
-        let (prompt, target_output_tokens) = generate_prompt(&prompt_config)?;
+        let (prompt, target_output_tokens) = generate_prompt(&prompt_config, &args.model)?;
         prompts_and_max_tokens.push((prompt, target_output_tokens));
     }
 
