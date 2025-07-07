@@ -24,8 +24,17 @@ pub fn generate_prompt(config: &PromptConfig) -> Result<(String, u32)> {
         config.stddev_output_tokens as f64,
     )?;
 
-    let target_output_tokens = sample_random_positive_int(&mut rng, &output_token_dist);
-    let mut num_prompt_tokens = sample_random_positive_int(&mut rng, &input_token_dist);
+    let target_output_tokens = output_token_dist
+        .sample_iter(&mut rng)
+        .map(|x| x.round() as u32)
+        .find(|&x| x > 0)
+        .unwrap();
+
+    let mut num_prompt_tokens = input_token_dist
+        .sample_iter(&mut rng)
+        .map(|x| x.round() as u32)
+        .find(|&x| x > 0)
+        .unwrap();
 
     let mut prompt = format!(
         "Randomly stream lines from the following text with {} output tokens. Don't generate eos tokens:\n\n",
@@ -35,7 +44,11 @@ pub fn generate_prompt(config: &PromptConfig) -> Result<(String, u32)> {
     let base_token_count = tokens::count_tokens(&prompt)?;
 
     while num_prompt_tokens < base_token_count {
-        num_prompt_tokens = sample_random_positive_int(&mut rng, &input_token_dist);
+        num_prompt_tokens = input_token_dist
+            .sample_iter(&mut rng)
+            .map(|x| x.round() as u32)
+            .find(|&x| x > 0)
+            .unwrap();
     }
 
     let mut remaining_prompt_tokens = num_prompt_tokens - base_token_count;
@@ -63,13 +76,4 @@ pub fn generate_prompt(config: &PromptConfig) -> Result<(String, u32)> {
     }
 
     Ok((prompt, target_output_tokens))
-}
-
-fn sample_random_positive_int<R: Rng>(rng: &mut R, dist: &Normal<f64>) -> u32 {
-    loop {
-        let sample = dist.sample(rng);
-        if sample > 0.0 {
-            return sample.round() as u32;
-        }
-    }
 }
