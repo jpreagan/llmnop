@@ -70,3 +70,49 @@ pub fn truncate_to_token_count(text: &str, max_tokens: u32) -> Result<String> {
 
     Ok(text.chars().take(max_index).collect())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_truncate_to_token_count() {
+        assert_eq!(truncate_to_token_count("", 10).unwrap(), "");
+
+        let short_text = "Hello world";
+        let short_token_count = count_tokens(short_text).unwrap();
+        assert!(short_token_count < 10);
+        assert_eq!(truncate_to_token_count(short_text, 10).unwrap(), short_text);
+
+        let long_text =
+            "Shall I compare thee to a summer's day? Thou art more lovely and more temperate.";
+        let truncated = truncate_to_token_count(long_text, 5).unwrap();
+        assert!(count_tokens(&truncated).unwrap() <= 5);
+        assert!(long_text.starts_with(&truncated));
+    }
+
+    #[test]
+    fn test_find_largest_prefix_index() {
+        let text = "The quick brown fox jumps over the lazy dog";
+
+        let result = find_largest_prefix_index(text, |_| Ok(true)).unwrap();
+        assert_eq!(result, text.chars().count());
+
+        let result = find_largest_prefix_index(text, |_| Ok(false)).unwrap();
+        assert_eq!(result, 0);
+
+        let token_limit = 5;
+        let result = find_largest_prefix_index(text, |prefix| {
+            Ok(count_tokens(prefix).unwrap() <= token_limit)
+        })
+        .unwrap();
+
+        let found_prefix: String = text.chars().take(result).collect();
+        assert!(count_tokens(&found_prefix).unwrap() <= token_limit);
+
+        if result < text.chars().count() {
+            let next_prefix: String = text.chars().take(result + 1).collect();
+            assert!(count_tokens(&next_prefix).unwrap() > token_limit);
+        }
+    }
+}
