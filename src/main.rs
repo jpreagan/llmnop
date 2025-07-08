@@ -1,7 +1,6 @@
 mod args;
 mod benchmark;
 mod client;
-mod metrics;
 mod output;
 mod prompt;
 mod sonnet;

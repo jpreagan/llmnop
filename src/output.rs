@@ -1,5 +1,4 @@
 use crate::benchmark::BenchmarkResult;
-use crate::metrics::Metrics;
 use serde::{Deserialize, Serialize};
 use std::fs::{create_dir_all, File};
 use std::io::Write;
@@ -133,22 +132,19 @@ pub fn write_results_json(
     for result in all_results {
         match result {
             Ok(br) => {
-                let metrics: Metrics = br.clone().into();
-                total_output_tokens += metrics.number_output_tokens as u64;
+                total_output_tokens += br.output_tokens as u64;
 
                 successful_results.push(br.clone());
                 let rec = IndividualResponse {
                     error_code: None,
                     error_msg: "".to_string(),
-                    inter_token_latency_s: Some(metrics.inter_token_latency_s),
-                    ttft_s: Some(metrics.ttft_s),
-                    end_to_end_latency_s: Some(metrics.end_to_end_latency_s),
-                    request_output_throughput_token_per_s: Some(
-                        metrics.request_output_throughput_token_per_s,
-                    ),
-                    number_total_tokens: Some(metrics.number_total_tokens),
-                    number_output_tokens: Some(metrics.number_output_tokens),
-                    number_input_tokens: Some(metrics.number_input_tokens),
+                    inter_token_latency_s: Some(br.inter_token_latency_s),
+                    ttft_s: Some(br.ttft.as_secs_f64()),
+                    end_to_end_latency_s: Some(br.total_latency.as_secs_f64()),
+                    request_output_throughput_token_per_s: Some(br.throughput),
+                    number_total_tokens: Some(br.total_tokens),
+                    number_output_tokens: Some(br.output_tokens),
+                    number_input_tokens: Some(br.input_tokens),
                 };
                 individual_responses.push(rec);
             }
@@ -229,7 +225,6 @@ fn build_flattened_summary(
     start_time: std::time::Instant,
     end_time: std::time::Instant,
 ) -> BenchmarkSummary {
-    use crate::metrics::Metrics;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     let total_time_s = end_time.duration_since(start_time).as_secs_f64();
@@ -242,13 +237,12 @@ fn build_flattened_summary(
     let mut out_tokens_vec = Vec::new();
 
     for br in successful_results {
-        let m: Metrics = br.clone().into();
-        inter_token_vec.push(m.inter_token_latency_s);
-        ttft_vec.push(m.ttft_s);
-        e2e_vec.push(m.end_to_end_latency_s);
-        throughput_vec.push(m.request_output_throughput_token_per_s);
-        in_tokens_vec.push(m.number_input_tokens as f64);
-        out_tokens_vec.push(m.number_output_tokens as f64);
+        inter_token_vec.push(br.inter_token_latency_s);
+        ttft_vec.push(br.ttft.as_secs_f64());
+        e2e_vec.push(br.total_latency.as_secs_f64());
+        throughput_vec.push(br.throughput);
+        in_tokens_vec.push(br.input_tokens as f64);
+        out_tokens_vec.push(br.output_tokens as f64);
     }
 
     let inter_stats = compute_stats_for_flatten(&inter_token_vec);
