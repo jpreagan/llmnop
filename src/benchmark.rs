@@ -1,6 +1,7 @@
 use crate::client::create_chat_completion_stream;
 use crate::tokens;
 use anyhow::Result;
+use async_openai::{config::OpenAIConfig, Client};
 use futures::StreamExt;
 use serde::Serialize;
 use std::time::{Duration, Instant};
@@ -16,12 +17,17 @@ pub struct BenchmarkResult {
     pub total_tokens: u32,
 }
 
-pub async fn run_benchmark(model: &str, prompt: &str, max_tokens: u32) -> Result<BenchmarkResult> {
+pub async fn run_benchmark(
+    client: &Client<OpenAIConfig>,
+    model: &str,
+    prompt: &str,
+    max_tokens: u32,
+) -> Result<BenchmarkResult> {
     let start_time = Instant::now();
     let mut chunk_arrivals: Vec<(Instant, String)> = Vec::new();
     let mut generated_text = String::new();
 
-    let mut stream = create_chat_completion_stream(model, prompt, max_tokens).await?;
+    let mut stream = create_chat_completion_stream(client, model, prompt, max_tokens).await?;
     while let Some(response_result) = stream.next().await {
         let response = response_result?;
         for choice in response.choices {

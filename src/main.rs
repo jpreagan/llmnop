@@ -6,14 +6,16 @@ mod prompt;
 mod sonnet;
 mod tokens;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Context, Result};
 use args::Args;
+use async_openai::{config::OpenAIConfig, Client};
 use benchmark::run_benchmark;
 use clap::Parser;
 use futures::{stream::FuturesUnordered, StreamExt};
 use indicatif::{ProgressBar, ProgressStyle};
 use prompt::{generate_prompt, PromptConfig};
 use std::env;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::time;
 
@@ -23,13 +25,13 @@ use output::write_results_json;
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    if env::var("OPENAI_API_KEY").is_err() {
-        return Err(anyhow!("OPENAI_API_KEY environment variable not set."));
-    }
+    let api_key = env::var("OPENAI_API_KEY").context("OPENAI_API_KEY not set")?;
+    let api_base = env::var("OPENAI_API_BASE").context("OPENAI_API_BASE not set")?;
 
-    if env::var("OPENAI_API_BASE").is_err() {
-        return Err(anyhow!("OPENAI_API_BASE environment variable not set."));
-    }
+    let openai_config = OpenAIConfig::new()
+        .with_api_key(api_key)
+        .with_api_base(api_base);
+    let client = Arc::new(Client::with_config(openai_config));
 
     let overall_start = Instant::now();
 
@@ -75,9 +77,10 @@ async fn main() -> Result<()> {
         let (ref prompt, max_tokens) = prompts_and_max_tokens[next_request_index as usize];
         let model_name = args.model.clone();
         let prompt_clone = prompt.clone();
+        let client_clone = client.clone();
 
         in_flight.push(tokio::spawn(async move {
-            run_benchmark(&model_name, &prompt_clone, max_tokens).await
+            run_benchmark(&client_clone, &model_name, &prompt_clone, max_tokens).await
         }));
         next_request_index += 1;
     }
@@ -110,9 +113,10 @@ async fn main() -> Result<()> {
                     let (ref prompt, max_tokens) = prompts_and_max_tokens[next_request_index as usize];
                     let model_name = args.model.clone();
                     let prompt_clone = prompt.clone();
+                    let client_clone = client.clone();
 
                     in_flight.push(tokio::spawn(async move {
-                        run_benchmark(&model_name, &prompt_clone, max_tokens).await
+                        run_benchmark(&client_clone, &model_name, &prompt_clone, max_tokens).await
                     }));
                     next_request_index += 1;
                 }
