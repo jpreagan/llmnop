@@ -36,7 +36,7 @@ pub struct IndividualResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FlattenedSummary {
+pub struct BenchmarkSummary {
     pub version: String,
     pub name: String,
     pub model: String,
@@ -45,150 +45,68 @@ pub struct FlattenedSummary {
     pub mean_output_tokens: u32,
     pub stddev_output_tokens: u32,
     pub num_concurrent_requests: u32,
-
-    #[serde(rename = "results_inter_token_latency_s_quantiles_p25")]
-    pub inter_token_latency_s_q25: f64,
-    #[serde(rename = "results_inter_token_latency_s_quantiles_p50")]
-    pub inter_token_latency_s_q50: f64,
-    #[serde(rename = "results_inter_token_latency_s_quantiles_p75")]
-    pub inter_token_latency_s_q75: f64,
-    #[serde(rename = "results_inter_token_latency_s_quantiles_p90")]
-    pub inter_token_latency_s_q90: f64,
-    #[serde(rename = "results_inter_token_latency_s_quantiles_p95")]
-    pub inter_token_latency_s_q95: f64,
-    #[serde(rename = "results_inter_token_latency_s_quantiles_p99")]
-    pub inter_token_latency_s_q99: f64,
-    #[serde(rename = "results_inter_token_latency_s_mean")]
-    pub inter_token_latency_s_mean: f64,
-    #[serde(rename = "results_inter_token_latency_s_min")]
-    pub inter_token_latency_s_min: f64,
-    #[serde(rename = "results_inter_token_latency_s_max")]
-    pub inter_token_latency_s_max: f64,
-    #[serde(rename = "results_inter_token_latency_s_stddev")]
-    pub inter_token_latency_s_stddev: f64,
-
-    #[serde(rename = "results_ttft_s_quantiles_p25")]
-    pub ttft_s_q25: f64,
-    #[serde(rename = "results_ttft_s_quantiles_p50")]
-    pub ttft_s_q50: f64,
-    #[serde(rename = "results_ttft_s_quantiles_p75")]
-    pub ttft_s_q75: f64,
-    #[serde(rename = "results_ttft_s_quantiles_p90")]
-    pub ttft_s_q90: f64,
-    #[serde(rename = "results_ttft_s_quantiles_p95")]
-    pub ttft_s_q95: f64,
-    #[serde(rename = "results_ttft_s_quantiles_p99")]
-    pub ttft_s_q99: f64,
-    #[serde(rename = "results_ttft_s_mean")]
-    pub ttft_s_mean: f64,
-    #[serde(rename = "results_ttft_s_min")]
-    pub ttft_s_min: f64,
-    #[serde(rename = "results_ttft_s_max")]
-    pub ttft_s_max: f64,
-    #[serde(rename = "results_ttft_s_stddev")]
-    pub ttft_s_stddev: f64,
-
-    #[serde(rename = "results_end_to_end_latency_s_quantiles_p25")]
-    pub e2e_latency_s_q25: f64,
-    #[serde(rename = "results_end_to_end_latency_s_quantiles_p50")]
-    pub e2e_latency_s_q50: f64,
-    #[serde(rename = "results_end_to_end_latency_s_quantiles_p75")]
-    pub e2e_latency_s_q75: f64,
-    #[serde(rename = "results_end_to_end_latency_s_quantiles_p90")]
-    pub e2e_latency_s_q90: f64,
-    #[serde(rename = "results_end_to_end_latency_s_quantiles_p95")]
-    pub e2e_latency_s_q95: f64,
-    #[serde(rename = "results_end_to_end_latency_s_quantiles_p99")]
-    pub e2e_latency_s_q99: f64,
-    #[serde(rename = "results_end_to_end_latency_s_mean")]
-    pub e2e_latency_s_mean: f64,
-    #[serde(rename = "results_end_to_end_latency_s_min")]
-    pub e2e_latency_s_min: f64,
-    #[serde(rename = "results_end_to_end_latency_s_max")]
-    pub e2e_latency_s_max: f64,
-    #[serde(rename = "results_end_to_end_latency_s_stddev")]
-    pub e2e_latency_s_stddev: f64,
-
-    #[serde(rename = "results_request_output_throughput_token_per_s_quantiles_p25")]
-    pub throughput_s_q25: f64,
-    #[serde(rename = "results_request_output_throughput_token_per_s_quantiles_p50")]
-    pub throughput_s_q50: f64,
-    #[serde(rename = "results_request_output_throughput_token_per_s_quantiles_p75")]
-    pub throughput_s_q75: f64,
-    #[serde(rename = "results_request_output_throughput_token_per_s_quantiles_p90")]
-    pub throughput_s_q90: f64,
-    #[serde(rename = "results_request_output_throughput_token_per_s_quantiles_p95")]
-    pub throughput_s_q95: f64,
-    #[serde(rename = "results_request_output_throughput_token_per_s_quantiles_p99")]
-    pub throughput_s_q99: f64,
-    #[serde(rename = "results_request_output_throughput_token_per_s_mean")]
-    pub throughput_s_mean: f64,
-    #[serde(rename = "results_request_output_throughput_token_per_s_min")]
-    pub throughput_s_min: f64,
-    #[serde(rename = "results_request_output_throughput_token_per_s_max")]
-    pub throughput_s_max: f64,
-    #[serde(rename = "results_request_output_throughput_token_per_s_stddev")]
-    pub throughput_s_stddev: f64,
-
-    #[serde(rename = "results_number_input_tokens_quantiles_p25")]
-    pub num_input_tokens_q25: f64,
-    #[serde(rename = "results_number_input_tokens_quantiles_p50")]
-    pub num_input_tokens_q50: f64,
-    #[serde(rename = "results_number_input_tokens_quantiles_p75")]
-    pub num_input_tokens_q75: f64,
-    #[serde(rename = "results_number_input_tokens_quantiles_p90")]
-    pub num_input_tokens_q90: f64,
-    #[serde(rename = "results_number_input_tokens_quantiles_p95")]
-    pub num_input_tokens_q95: f64,
-    #[serde(rename = "results_number_input_tokens_quantiles_p99")]
-    pub num_input_tokens_q99: f64,
-    #[serde(rename = "results_number_input_tokens_mean")]
-    pub num_input_tokens_mean: f64,
-    #[serde(rename = "results_number_input_tokens_min")]
-    pub num_input_tokens_min: String,
-    #[serde(rename = "results_number_input_tokens_max")]
-    pub num_input_tokens_max: String,
-    #[serde(rename = "results_number_input_tokens_stddev")]
-    pub num_input_tokens_stddev: f64,
-
-    #[serde(rename = "results_number_output_tokens_quantiles_p25")]
-    pub num_output_tokens_q25: f64,
-    #[serde(rename = "results_number_output_tokens_quantiles_p50")]
-    pub num_output_tokens_q50: f64,
-    #[serde(rename = "results_number_output_tokens_quantiles_p75")]
-    pub num_output_tokens_q75: f64,
-    #[serde(rename = "results_number_output_tokens_quantiles_p90")]
-    pub num_output_tokens_q90: f64,
-    #[serde(rename = "results_number_output_tokens_quantiles_p95")]
-    pub num_output_tokens_q95: f64,
-    #[serde(rename = "results_number_output_tokens_quantiles_p99")]
-    pub num_output_tokens_q99: f64,
-    #[serde(rename = "results_number_output_tokens_mean")]
-    pub num_output_tokens_mean: f64,
-    #[serde(rename = "results_number_output_tokens_min")]
-    pub num_output_tokens_min: String,
-    #[serde(rename = "results_number_output_tokens_max")]
-    pub num_output_tokens_max: String,
-    #[serde(rename = "results_number_output_tokens_stddev")]
-    pub num_output_tokens_stddev: f64,
-
-    #[serde(rename = "results_num_requests_started")]
-    pub num_requests_started: usize,
-    #[serde(rename = "results_error_rate")]
-    pub error_rate: f64,
-    #[serde(rename = "results_number_errors")]
-    pub number_errors: usize,
-    #[serde(rename = "results_error_code_frequency")]
-    pub error_code_frequency: String,
-    #[serde(rename = "results_mean_output_throughput_token_per_s")]
-    pub mean_output_throughput_token_per_s: f64,
-    #[serde(rename = "results_num_completed_requests")]
-    pub num_completed_requests: usize,
-    #[serde(rename = "results_num_completed_requests_per_min")]
-    pub num_completed_requests_per_min: f64,
-
-    #[serde(rename = "timestamp")]
+    pub results: MetricResults,
     pub timestamp: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MetricResults {
+    #[serde(rename = "inter_token_latency_s")]
+    pub inter_token_latency_s: MetricStats,
+    #[serde(rename = "ttft_s")]
+    pub ttft_s: MetricStats,
+    #[serde(rename = "end_to_end_latency_s")]
+    pub end_to_end_latency_s: MetricStats,
+    #[serde(rename = "request_output_throughput_token_per_s")]
+    pub request_output_throughput_token_per_s: MetricStats,
+    #[serde(rename = "number_input_tokens")]
+    pub number_input_tokens: TokenStats,
+    #[serde(rename = "number_output_tokens")]
+    pub number_output_tokens: TokenStats,
+    #[serde(rename = "num_requests_started")]
+    pub num_requests_started: usize,
+    #[serde(rename = "error_rate")]
+    pub error_rate: f64,
+    #[serde(rename = "number_errors")]
+    pub number_errors: usize,
+    #[serde(rename = "error_code_frequency")]
+    pub error_code_frequency: String,
+    #[serde(rename = "mean_output_throughput_token_per_s")]
+    pub mean_output_throughput_token_per_s: f64,
+    #[serde(rename = "num_completed_requests")]
+    pub num_completed_requests: usize,
+    #[serde(rename = "num_completed_requests_per_min")]
+    pub num_completed_requests_per_min: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MetricStats {
+    #[serde(rename = "quantiles")]
+    pub quantiles: Quantiles,
+    pub mean: f64,
+    pub min: f64,
+    pub max: f64,
+    pub stddev: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenStats {
+    #[serde(rename = "quantiles")]
+    pub quantiles: Quantiles,
+    pub mean: f64,
+    pub min: String,
+    pub max: String,
+    pub stddev: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Quantiles {
+    pub p25: f64,
+    pub p50: f64,
+    pub p75: f64,
+    pub p90: f64,
+    pub p95: f64,
+    pub p99: f64,
 }
 
 pub fn write_results_json(
@@ -310,7 +228,7 @@ fn build_flattened_summary(
     total_output_tokens: u64,
     start_time: std::time::Instant,
     end_time: std::time::Instant,
-) -> FlattenedSummary {
+) -> BenchmarkSummary {
     use crate::metrics::Metrics;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -369,7 +287,7 @@ fn build_flattened_summary(
         .unwrap_or_default()
         .as_secs();
 
-    FlattenedSummary {
+    BenchmarkSummary {
         version: "2023-08-31".to_string(),
         name: format!(
             "{}_{}_{}_summary",
@@ -383,96 +301,81 @@ fn build_flattened_summary(
         mean_output_tokens,
         stddev_output_tokens,
         num_concurrent_requests,
-
-        inter_token_latency_s_q25: inter_stats.q25,
-        inter_token_latency_s_q50: inter_stats.q50,
-        inter_token_latency_s_q75: inter_stats.q75,
-        inter_token_latency_s_q90: inter_stats.q90,
-        inter_token_latency_s_q95: inter_stats.q95,
-        inter_token_latency_s_q99: inter_stats.q99,
-        inter_token_latency_s_mean: inter_stats.mean,
-        inter_token_latency_s_min: inter_stats.min,
-        inter_token_latency_s_max: inter_stats.max,
-        inter_token_latency_s_stddev: inter_stats.stddev,
-
-        ttft_s_q25: ttft_stats.q25,
-        ttft_s_q50: ttft_stats.q50,
-        ttft_s_q75: ttft_stats.q75,
-        ttft_s_q90: ttft_stats.q90,
-        ttft_s_q95: ttft_stats.q95,
-        ttft_s_q99: ttft_stats.q99,
-        ttft_s_mean: ttft_stats.mean,
-        ttft_s_min: ttft_stats.min,
-        ttft_s_max: ttft_stats.max,
-        ttft_s_stddev: ttft_stats.stddev,
-
-        e2e_latency_s_q25: e2e_stats.q25,
-        e2e_latency_s_q50: e2e_stats.q50,
-        e2e_latency_s_q75: e2e_stats.q75,
-        e2e_latency_s_q90: e2e_stats.q90,
-        e2e_latency_s_q95: e2e_stats.q95,
-        e2e_latency_s_q99: e2e_stats.q99,
-        e2e_latency_s_mean: e2e_stats.mean,
-        e2e_latency_s_min: e2e_stats.min,
-        e2e_latency_s_max: e2e_stats.max,
-        e2e_latency_s_stddev: e2e_stats.stddev,
-
-        throughput_s_q25: thr_stats.q25,
-        throughput_s_q50: thr_stats.q50,
-        throughput_s_q75: thr_stats.q75,
-        throughput_s_q90: thr_stats.q90,
-        throughput_s_q95: thr_stats.q95,
-        throughput_s_q99: thr_stats.q99,
-        throughput_s_mean: thr_stats.mean,
-        throughput_s_min: thr_stats.min,
-        throughput_s_max: thr_stats.max,
-        throughput_s_stddev: thr_stats.stddev,
-
-        num_input_tokens_q25: in_stats.q25,
-        num_input_tokens_q50: in_stats.q50,
-        num_input_tokens_q75: in_stats.q75,
-        num_input_tokens_q90: in_stats.q90,
-        num_input_tokens_q95: in_stats.q95,
-        num_input_tokens_q99: in_stats.q99,
-        num_input_tokens_mean: in_stats.mean,
-        num_input_tokens_min: format!("{}", in_stats.min),
-        num_input_tokens_max: format!("{}", in_stats.max),
-        num_input_tokens_stddev: in_stats.stddev,
-
-        num_output_tokens_q25: out_stats.q25,
-        num_output_tokens_q50: out_stats.q50,
-        num_output_tokens_q75: out_stats.q75,
-        num_output_tokens_q90: out_stats.q90,
-        num_output_tokens_q95: out_stats.q95,
-        num_output_tokens_q99: out_stats.q99,
-        num_output_tokens_mean: out_stats.mean,
-        num_output_tokens_min: format!("{}", out_stats.min),
-        num_output_tokens_max: format!("{}", out_stats.max),
-        num_output_tokens_stddev: out_stats.stddev,
-
-        num_requests_started,
-        error_rate,
-        number_errors: num_errors,
-        error_code_frequency,
-        mean_output_throughput_token_per_s,
-        num_completed_requests,
-        num_completed_requests_per_min,
+        results: MetricResults {
+            inter_token_latency_s: MetricStats {
+                quantiles: inter_stats.quantiles,
+                mean: inter_stats.mean,
+                min: inter_stats.min,
+                max: inter_stats.max,
+                stddev: inter_stats.stddev,
+            },
+            ttft_s: MetricStats {
+                quantiles: ttft_stats.quantiles,
+                mean: ttft_stats.mean,
+                min: ttft_stats.min,
+                max: ttft_stats.max,
+                stddev: ttft_stats.stddev,
+            },
+            end_to_end_latency_s: MetricStats {
+                quantiles: e2e_stats.quantiles,
+                mean: e2e_stats.mean,
+                min: e2e_stats.min,
+                max: e2e_stats.max,
+                stddev: e2e_stats.stddev,
+            },
+            request_output_throughput_token_per_s: MetricStats {
+                quantiles: thr_stats.quantiles,
+                mean: thr_stats.mean,
+                min: thr_stats.min,
+                max: thr_stats.max,
+                stddev: thr_stats.stddev,
+            },
+            number_input_tokens: TokenStats {
+                quantiles: in_stats.quantiles,
+                mean: in_stats.mean,
+                min: format!("{}", in_stats.min),
+                max: format!("{}", in_stats.max),
+                stddev: in_stats.stddev,
+            },
+            number_output_tokens: TokenStats {
+                quantiles: out_stats.quantiles,
+                mean: out_stats.mean,
+                min: format!("{}", out_stats.min),
+                max: format!("{}", out_stats.max),
+                stddev: out_stats.stddev,
+            },
+            num_requests_started,
+            error_rate,
+            number_errors: num_errors,
+            error_code_frequency,
+            mean_output_throughput_token_per_s,
+            num_completed_requests,
+            num_completed_requests_per_min,
+        },
         timestamp,
     }
 }
 
 #[derive(Default)]
 struct StatSet {
-    q25: f64,
-    q50: f64,
-    q75: f64,
-    q90: f64,
-    q95: f64,
-    q99: f64,
+    quantiles: Quantiles,
     mean: f64,
     min: f64,
     max: f64,
     stddev: f64,
+}
+
+impl Default for Quantiles {
+    fn default() -> Self {
+        Self {
+            p25: 0.0,
+            p50: 0.0,
+            p75: 0.0,
+            p90: 0.0,
+            p95: 0.0,
+            p99: 0.0,
+        }
+    }
 }
 
 fn compute_stats_for_flatten(values: &[f64]) -> StatSet {
@@ -492,20 +395,17 @@ fn compute_stats_for_flatten(values: &[f64]) -> StatSet {
     } else {
         0.0
     };
-    let q25 = percentile(&sorted, 0.25);
-    let q50 = percentile(&sorted, 0.50);
-    let q75 = percentile(&sorted, 0.75);
-    let q90 = percentile(&sorted, 0.90);
-    let q95 = percentile(&sorted, 0.95);
-    let q99 = percentile(&sorted, 0.99);
+    let quantiles = Quantiles {
+        p25: percentile(&sorted, 0.25),
+        p50: percentile(&sorted, 0.50),
+        p75: percentile(&sorted, 0.75),
+        p90: percentile(&sorted, 0.90),
+        p95: percentile(&sorted, 0.95),
+        p99: percentile(&sorted, 0.99),
+    };
 
     StatSet {
-        q25,
-        q50,
-        q75,
-        q90,
-        q95,
-        q99,
+        quantiles,
         mean,
         min,
         max,
@@ -526,64 +426,63 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_percentile_behavior() {
-        let values = vec![5.0, 10.0, 15.0, 20.0, 25.0];
+    fn test_percentile_calculation() {
+        let values = vec![1.0, 2.0, 3.0, 4.0, 5.0];
 
-        assert!(percentile(&values, 0.0) <= percentile(&values, 0.25));
-        assert!(percentile(&values, 0.25) <= percentile(&values, 0.5));
-        assert!(percentile(&values, 0.5) <= percentile(&values, 0.75));
-        assert!(percentile(&values, 0.75) <= percentile(&values, 1.0));
+        assert_eq!(percentile(&values, 0.0), 1.0);
+        assert_eq!(percentile(&values, 0.25), 2.0);
+        assert_eq!(percentile(&values, 0.5), 3.0);
+        assert_eq!(percentile(&values, 0.75), 4.0);
+        assert_eq!(percentile(&values, 1.0), 5.0);
 
-        assert_eq!(percentile(&values, 0.0), 5.0);
-        assert_eq!(percentile(&values, 1.0), 25.0);
-
-        assert_eq!(
-            percentile(&[], 0.5),
-            0.0,
-            "Empty array should return default value"
-        );
-        assert_eq!(
-            percentile(&[42.0], 0.5),
-            42.0,
-            "Single-element array should return that element"
-        );
+        assert_eq!(percentile(&[], 0.5), 0.0);
+        assert_eq!(percentile(&[42.0], 0.5), 42.0);
     }
 
     #[test]
-    fn test_stats_basic_properties() {
-        let values = vec![5.0, 10.0, 15.0, 20.0, 25.0];
+    fn test_serialization_roundtrip() {
+        let quantiles = Quantiles {
+            p25: 0.1,
+            p50: 0.2,
+            p75: 0.3,
+            p90: 0.4,
+            p95: 0.5,
+            p99: 0.6,
+        };
+        let metric_stats = MetricStats {
+            quantiles,
+            mean: 0.25,
+            min: 0.05,
+            max: 0.8,
+            stddev: 0.1,
+        };
 
+        let json = serde_json::to_string(&metric_stats).unwrap();
+        let deserialized: MetricStats = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.quantiles.p25, 0.1);
+        assert_eq!(deserialized.mean, 0.25);
+    }
+
+    #[test]
+    fn test_stats_computation() {
+        let values = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         let stats = compute_stats_for_flatten(&values);
 
-        assert!(stats.min <= stats.q25, "Min should be <= 25th percentile");
-        assert!(
-            stats.q25 <= stats.q50,
-            "25th percentile should be <= median"
-        );
-        assert!(
-            stats.q50 <= stats.q75,
-            "Median should be <= 75th percentile"
-        );
-        assert!(stats.q75 <= stats.max, "75th percentile should be <= max");
+        assert_eq!(stats.mean, 3.0);
+        assert_eq!(stats.min, 1.0);
+        assert_eq!(stats.max, 5.0);
+        assert!(stats.stddev > 0.0);
 
-        assert!(
-            stats.stddev >= 0.0,
-            "Standard deviation should be non-negative"
-        );
+        // Test ordering invariant
+        assert!(stats.min <= stats.quantiles.p25);
+        assert!(stats.quantiles.p25 <= stats.quantiles.p50);
+        assert!(stats.quantiles.p75 <= stats.max);
 
-        assert!(
-            (stats.mean - stats.q50).abs() < 0.001,
-            "For symmetric distribution, mean and median should be very close"
-        );
-
+        // Test empty case
         let empty_stats = compute_stats_for_flatten(&[]);
-        assert_eq!(
-            empty_stats.min, 0.0,
-            "Empty array should have default values"
-        );
-        assert_eq!(
-            empty_stats.max, 0.0,
-            "Empty array should have default values"
-        );
+        assert_eq!(empty_stats.min, 0.0);
+        assert_eq!(empty_stats.max, 0.0);
+        assert_eq!(empty_stats.mean, 0.0);
     }
 }
