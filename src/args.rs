@@ -24,7 +24,7 @@ pub struct Args {
     #[arg(long, default_value = "10")]
     pub stddev_output_tokens: u32,
 
-    #[arg(long, default_value = "")]
+    #[arg(long, default_value = "result_outputs")]
     pub results_dir: String,
 
     #[arg(long, default_value = "600")]
