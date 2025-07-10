@@ -3,13 +3,13 @@ name = "llmnop"
 version = "0.1.0"
 edition = "2021"
 description = "A command-line tool for benchmarking the performance of LLM inference endpoints."
-license = "Apache-2.0 OR MIT"
+license = "Apache-2.0"
 homepage = "https://github.com/jpreagan/llmnop"
 repository = "https://github.com/jpreagan/llmnop"
 readme = "README.md"
 keywords = ["llm", "benchmark", "performance", "openai", "inference"]
 categories = ["command-line-utilities", "development-tools"]
-exclude = ["assets/*"]
+exclude = ["assets", ".github"]
 
 [dependencies]
 anyhow = "1.0.97"
