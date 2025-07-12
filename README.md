@@ -46,13 +46,13 @@ cargo build --release
 
 ## Usage
 
-```bash
+```
 llmnop [OPTIONS] --model <MODEL>
 ```
 
 ### Options
 
-```bash
+```
 -m, --model <MODEL>
     --max-num-completed-requests <MAX_NUM_COMPLETED_REQUESTS>  [default: 1]
     --num-concurrent-requests <NUM_CONCURRENT_REQUESTS>        [default: 1]
