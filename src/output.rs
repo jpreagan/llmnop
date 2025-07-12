@@ -44,59 +44,91 @@ pub struct BenchmarkSummary {
     pub mean_output_tokens: u32,
     pub stddev_output_tokens: u32,
     pub num_concurrent_requests: u32,
-    pub results: MetricResults,
+    
+    // Inter-token latency fields
+    pub results_inter_token_latency_s_quantiles_p25: f64,
+    pub results_inter_token_latency_s_quantiles_p50: f64,
+    pub results_inter_token_latency_s_quantiles_p75: f64,
+    pub results_inter_token_latency_s_quantiles_p90: f64,
+    pub results_inter_token_latency_s_quantiles_p95: f64,
+    pub results_inter_token_latency_s_quantiles_p99: f64,
+    pub results_inter_token_latency_s_mean: f64,
+    pub results_inter_token_latency_s_min: f64,
+    pub results_inter_token_latency_s_max: f64,
+    pub results_inter_token_latency_s_stddev: f64,
+    
+    // TTFT fields
+    pub results_ttft_s_quantiles_p25: f64,
+    pub results_ttft_s_quantiles_p50: f64,
+    pub results_ttft_s_quantiles_p75: f64,
+    pub results_ttft_s_quantiles_p90: f64,
+    pub results_ttft_s_quantiles_p95: f64,
+    pub results_ttft_s_quantiles_p99: f64,
+    pub results_ttft_s_mean: f64,
+    pub results_ttft_s_min: f64,
+    pub results_ttft_s_max: f64,
+    pub results_ttft_s_stddev: f64,
+    
+    // End-to-end latency fields
+    pub results_end_to_end_latency_s_quantiles_p25: f64,
+    pub results_end_to_end_latency_s_quantiles_p50: f64,
+    pub results_end_to_end_latency_s_quantiles_p75: f64,
+    pub results_end_to_end_latency_s_quantiles_p90: f64,
+    pub results_end_to_end_latency_s_quantiles_p95: f64,
+    pub results_end_to_end_latency_s_quantiles_p99: f64,
+    pub results_end_to_end_latency_s_mean: f64,
+    pub results_end_to_end_latency_s_min: f64,
+    pub results_end_to_end_latency_s_max: f64,
+    pub results_end_to_end_latency_s_stddev: f64,
+    
+    // Request output throughput fields
+    pub results_request_output_throughput_token_per_s_quantiles_p25: f64,
+    pub results_request_output_throughput_token_per_s_quantiles_p50: f64,
+    pub results_request_output_throughput_token_per_s_quantiles_p75: f64,
+    pub results_request_output_throughput_token_per_s_quantiles_p90: f64,
+    pub results_request_output_throughput_token_per_s_quantiles_p95: f64,
+    pub results_request_output_throughput_token_per_s_quantiles_p99: f64,
+    pub results_request_output_throughput_token_per_s_mean: f64,
+    pub results_request_output_throughput_token_per_s_min: f64,
+    pub results_request_output_throughput_token_per_s_max: f64,
+    pub results_request_output_throughput_token_per_s_stddev: f64,
+    
+    // Input tokens fields
+    pub results_number_input_tokens_quantiles_p25: f64,
+    pub results_number_input_tokens_quantiles_p50: f64,
+    pub results_number_input_tokens_quantiles_p75: f64,
+    pub results_number_input_tokens_quantiles_p90: f64,
+    pub results_number_input_tokens_quantiles_p95: f64,
+    pub results_number_input_tokens_quantiles_p99: f64,
+    pub results_number_input_tokens_mean: f64,
+    pub results_number_input_tokens_min: String,
+    pub results_number_input_tokens_max: String,
+    pub results_number_input_tokens_stddev: f64,
+    
+    // Output tokens fields
+    pub results_number_output_tokens_quantiles_p25: f64,
+    pub results_number_output_tokens_quantiles_p50: f64,
+    pub results_number_output_tokens_quantiles_p75: f64,
+    pub results_number_output_tokens_quantiles_p90: f64,
+    pub results_number_output_tokens_quantiles_p95: f64,
+    pub results_number_output_tokens_quantiles_p99: f64,
+    pub results_number_output_tokens_mean: f64,
+    pub results_number_output_tokens_min: String,
+    pub results_number_output_tokens_max: String,
+    pub results_number_output_tokens_stddev: f64,
+    
+    // Other results fields
+    pub results_num_requests_started: usize,
+    pub results_error_rate: f64,
+    pub results_number_errors: usize,
+    pub results_error_code_frequency: String,
+    pub results_mean_output_throughput_token_per_s: f64,
+    pub results_num_completed_requests: usize,
+    pub results_num_completed_requests_per_min: f64,
+    
     pub timestamp: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MetricResults {
-    #[serde(rename = "inter_token_latency_s")]
-    pub inter_token_latency_s: MetricStats,
-    #[serde(rename = "ttft_s")]
-    pub ttft_s: MetricStats,
-    #[serde(rename = "end_to_end_latency_s")]
-    pub end_to_end_latency_s: MetricStats,
-    #[serde(rename = "request_output_throughput_token_per_s")]
-    pub request_output_throughput_token_per_s: MetricStats,
-    #[serde(rename = "number_input_tokens")]
-    pub number_input_tokens: TokenStats,
-    #[serde(rename = "number_output_tokens")]
-    pub number_output_tokens: TokenStats,
-    #[serde(rename = "num_requests_started")]
-    pub num_requests_started: usize,
-    #[serde(rename = "error_rate")]
-    pub error_rate: f64,
-    #[serde(rename = "number_errors")]
-    pub number_errors: usize,
-    #[serde(rename = "error_code_frequency")]
-    pub error_code_frequency: String,
-    #[serde(rename = "mean_output_throughput_token_per_s")]
-    pub mean_output_throughput_token_per_s: f64,
-    #[serde(rename = "num_completed_requests")]
-    pub num_completed_requests: usize,
-    #[serde(rename = "num_completed_requests_per_min")]
-    pub num_completed_requests_per_min: f64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MetricStats {
-    #[serde(rename = "quantiles")]
-    pub quantiles: Quantiles,
-    pub mean: f64,
-    pub min: f64,
-    pub max: f64,
-    pub stddev: f64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TokenStats {
-    #[serde(rename = "quantiles")]
-    pub quantiles: Quantiles,
-    pub mean: f64,
-    pub min: String,
-    pub max: String,
-    pub stddev: f64,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Quantiles {
@@ -295,57 +327,88 @@ fn build_flattened_summary(
         mean_output_tokens,
         stddev_output_tokens,
         num_concurrent_requests,
-        results: MetricResults {
-            inter_token_latency_s: MetricStats {
-                quantiles: inter_stats.quantiles,
-                mean: inter_stats.mean,
-                min: inter_stats.min,
-                max: inter_stats.max,
-                stddev: inter_stats.stddev,
-            },
-            ttft_s: MetricStats {
-                quantiles: ttft_stats.quantiles,
-                mean: ttft_stats.mean,
-                min: ttft_stats.min,
-                max: ttft_stats.max,
-                stddev: ttft_stats.stddev,
-            },
-            end_to_end_latency_s: MetricStats {
-                quantiles: e2e_stats.quantiles,
-                mean: e2e_stats.mean,
-                min: e2e_stats.min,
-                max: e2e_stats.max,
-                stddev: e2e_stats.stddev,
-            },
-            request_output_throughput_token_per_s: MetricStats {
-                quantiles: thr_stats.quantiles,
-                mean: thr_stats.mean,
-                min: thr_stats.min,
-                max: thr_stats.max,
-                stddev: thr_stats.stddev,
-            },
-            number_input_tokens: TokenStats {
-                quantiles: in_stats.quantiles,
-                mean: in_stats.mean,
-                min: format!("{}", in_stats.min),
-                max: format!("{}", in_stats.max),
-                stddev: in_stats.stddev,
-            },
-            number_output_tokens: TokenStats {
-                quantiles: out_stats.quantiles,
-                mean: out_stats.mean,
-                min: format!("{}", out_stats.min),
-                max: format!("{}", out_stats.max),
-                stddev: out_stats.stddev,
-            },
-            num_requests_started,
-            error_rate,
-            number_errors: num_errors,
-            error_code_frequency,
-            mean_output_throughput_token_per_s,
-            num_completed_requests,
-            num_completed_requests_per_min,
-        },
+        
+        // Inter-token latency
+        results_inter_token_latency_s_quantiles_p25: inter_stats.quantiles.p25,
+        results_inter_token_latency_s_quantiles_p50: inter_stats.quantiles.p50,
+        results_inter_token_latency_s_quantiles_p75: inter_stats.quantiles.p75,
+        results_inter_token_latency_s_quantiles_p90: inter_stats.quantiles.p90,
+        results_inter_token_latency_s_quantiles_p95: inter_stats.quantiles.p95,
+        results_inter_token_latency_s_quantiles_p99: inter_stats.quantiles.p99,
+        results_inter_token_latency_s_mean: inter_stats.mean,
+        results_inter_token_latency_s_min: inter_stats.min,
+        results_inter_token_latency_s_max: inter_stats.max,
+        results_inter_token_latency_s_stddev: inter_stats.stddev,
+        
+        // TTFT
+        results_ttft_s_quantiles_p25: ttft_stats.quantiles.p25,
+        results_ttft_s_quantiles_p50: ttft_stats.quantiles.p50,
+        results_ttft_s_quantiles_p75: ttft_stats.quantiles.p75,
+        results_ttft_s_quantiles_p90: ttft_stats.quantiles.p90,
+        results_ttft_s_quantiles_p95: ttft_stats.quantiles.p95,
+        results_ttft_s_quantiles_p99: ttft_stats.quantiles.p99,
+        results_ttft_s_mean: ttft_stats.mean,
+        results_ttft_s_min: ttft_stats.min,
+        results_ttft_s_max: ttft_stats.max,
+        results_ttft_s_stddev: ttft_stats.stddev,
+        
+        // End-to-end latency
+        results_end_to_end_latency_s_quantiles_p25: e2e_stats.quantiles.p25,
+        results_end_to_end_latency_s_quantiles_p50: e2e_stats.quantiles.p50,
+        results_end_to_end_latency_s_quantiles_p75: e2e_stats.quantiles.p75,
+        results_end_to_end_latency_s_quantiles_p90: e2e_stats.quantiles.p90,
+        results_end_to_end_latency_s_quantiles_p95: e2e_stats.quantiles.p95,
+        results_end_to_end_latency_s_quantiles_p99: e2e_stats.quantiles.p99,
+        results_end_to_end_latency_s_mean: e2e_stats.mean,
+        results_end_to_end_latency_s_min: e2e_stats.min,
+        results_end_to_end_latency_s_max: e2e_stats.max,
+        results_end_to_end_latency_s_stddev: e2e_stats.stddev,
+        
+        // Request output throughput
+        results_request_output_throughput_token_per_s_quantiles_p25: thr_stats.quantiles.p25,
+        results_request_output_throughput_token_per_s_quantiles_p50: thr_stats.quantiles.p50,
+        results_request_output_throughput_token_per_s_quantiles_p75: thr_stats.quantiles.p75,
+        results_request_output_throughput_token_per_s_quantiles_p90: thr_stats.quantiles.p90,
+        results_request_output_throughput_token_per_s_quantiles_p95: thr_stats.quantiles.p95,
+        results_request_output_throughput_token_per_s_quantiles_p99: thr_stats.quantiles.p99,
+        results_request_output_throughput_token_per_s_mean: thr_stats.mean,
+        results_request_output_throughput_token_per_s_min: thr_stats.min,
+        results_request_output_throughput_token_per_s_max: thr_stats.max,
+        results_request_output_throughput_token_per_s_stddev: thr_stats.stddev,
+        
+        // Input tokens
+        results_number_input_tokens_quantiles_p25: in_stats.quantiles.p25,
+        results_number_input_tokens_quantiles_p50: in_stats.quantiles.p50,
+        results_number_input_tokens_quantiles_p75: in_stats.quantiles.p75,
+        results_number_input_tokens_quantiles_p90: in_stats.quantiles.p90,
+        results_number_input_tokens_quantiles_p95: in_stats.quantiles.p95,
+        results_number_input_tokens_quantiles_p99: in_stats.quantiles.p99,
+        results_number_input_tokens_mean: in_stats.mean,
+        results_number_input_tokens_min: format!("{}", in_stats.min as u32),
+        results_number_input_tokens_max: format!("{}", in_stats.max as u32),
+        results_number_input_tokens_stddev: in_stats.stddev,
+        
+        // Output tokens
+        results_number_output_tokens_quantiles_p25: out_stats.quantiles.p25,
+        results_number_output_tokens_quantiles_p50: out_stats.quantiles.p50,
+        results_number_output_tokens_quantiles_p75: out_stats.quantiles.p75,
+        results_number_output_tokens_quantiles_p90: out_stats.quantiles.p90,
+        results_number_output_tokens_quantiles_p95: out_stats.quantiles.p95,
+        results_number_output_tokens_quantiles_p99: out_stats.quantiles.p99,
+        results_number_output_tokens_mean: out_stats.mean,
+        results_number_output_tokens_min: format!("{}", out_stats.min as u32),
+        results_number_output_tokens_max: format!("{}", out_stats.max as u32),
+        results_number_output_tokens_stddev: out_stats.stddev,
+        
+        // Other fields
+        results_num_requests_started: num_requests_started,
+        results_error_rate: error_rate,
+        results_number_errors: num_errors,
+        results_error_code_frequency: error_code_frequency,
+        results_mean_output_throughput_token_per_s: mean_output_throughput_token_per_s,
+        results_num_completed_requests: num_completed_requests,
+        results_num_completed_requests_per_min: num_completed_requests_per_min,
+        
         timestamp,
     }
 }
@@ -434,7 +497,7 @@ mod tests {
     }
 
     #[test]
-    fn test_serialization_roundtrip() {
+    fn test_quantiles_serialization() {
         let quantiles = Quantiles {
             p25: 0.1,
             p50: 0.2,
@@ -443,19 +506,12 @@ mod tests {
             p95: 0.5,
             p99: 0.6,
         };
-        let metric_stats = MetricStats {
-            quantiles,
-            mean: 0.25,
-            min: 0.05,
-            max: 0.8,
-            stddev: 0.1,
-        };
 
-        let json = serde_json::to_string(&metric_stats).unwrap();
-        let deserialized: MetricStats = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&quantiles).unwrap();
+        let deserialized: Quantiles = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(deserialized.quantiles.p25, 0.1);
-        assert_eq!(deserialized.mean, 0.25);
+        assert_eq!(deserialized.p25, 0.1);
+        assert_eq!(deserialized.p50, 0.2);
     }
 
     #[test]

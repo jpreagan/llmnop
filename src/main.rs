@@ -35,9 +35,6 @@ async fn main() -> Result<()> {
 
     let overall_start = Instant::now();
 
-    println!("Using model: {}", &args.model);
-    println!("Tokenizers will be downloaded from Hugging Face Hub and cached on first use.");
-
     let prompt_config = PromptConfig {
         mean_input_tokens: args.mean_input_tokens,
         stddev_input_tokens: args.stddev_input_tokens,
