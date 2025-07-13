@@ -44,8 +44,7 @@ pub struct BenchmarkSummary {
     pub mean_output_tokens: u32,
     pub stddev_output_tokens: u32,
     pub num_concurrent_requests: u32,
-    
-    // Inter-token latency fields
+
     pub results_inter_token_latency_s_quantiles_p25: f64,
     pub results_inter_token_latency_s_quantiles_p50: f64,
     pub results_inter_token_latency_s_quantiles_p75: f64,
@@ -56,8 +55,7 @@ pub struct BenchmarkSummary {
     pub results_inter_token_latency_s_min: f64,
     pub results_inter_token_latency_s_max: f64,
     pub results_inter_token_latency_s_stddev: f64,
-    
-    // TTFT fields
+
     pub results_ttft_s_quantiles_p25: f64,
     pub results_ttft_s_quantiles_p50: f64,
     pub results_ttft_s_quantiles_p75: f64,
@@ -68,8 +66,7 @@ pub struct BenchmarkSummary {
     pub results_ttft_s_min: f64,
     pub results_ttft_s_max: f64,
     pub results_ttft_s_stddev: f64,
-    
-    // End-to-end latency fields
+
     pub results_end_to_end_latency_s_quantiles_p25: f64,
     pub results_end_to_end_latency_s_quantiles_p50: f64,
     pub results_end_to_end_latency_s_quantiles_p75: f64,
@@ -80,8 +77,7 @@ pub struct BenchmarkSummary {
     pub results_end_to_end_latency_s_min: f64,
     pub results_end_to_end_latency_s_max: f64,
     pub results_end_to_end_latency_s_stddev: f64,
-    
-    // Request output throughput fields
+
     pub results_request_output_throughput_token_per_s_quantiles_p25: f64,
     pub results_request_output_throughput_token_per_s_quantiles_p50: f64,
     pub results_request_output_throughput_token_per_s_quantiles_p75: f64,
@@ -92,8 +88,7 @@ pub struct BenchmarkSummary {
     pub results_request_output_throughput_token_per_s_min: f64,
     pub results_request_output_throughput_token_per_s_max: f64,
     pub results_request_output_throughput_token_per_s_stddev: f64,
-    
-    // Input tokens fields
+
     pub results_number_input_tokens_quantiles_p25: f64,
     pub results_number_input_tokens_quantiles_p50: f64,
     pub results_number_input_tokens_quantiles_p75: f64,
@@ -104,8 +99,7 @@ pub struct BenchmarkSummary {
     pub results_number_input_tokens_min: String,
     pub results_number_input_tokens_max: String,
     pub results_number_input_tokens_stddev: f64,
-    
-    // Output tokens fields
+
     pub results_number_output_tokens_quantiles_p25: f64,
     pub results_number_output_tokens_quantiles_p50: f64,
     pub results_number_output_tokens_quantiles_p75: f64,
@@ -116,8 +110,7 @@ pub struct BenchmarkSummary {
     pub results_number_output_tokens_min: String,
     pub results_number_output_tokens_max: String,
     pub results_number_output_tokens_stddev: f64,
-    
-    // Other results fields
+
     pub results_num_requests_started: usize,
     pub results_error_rate: f64,
     pub results_number_errors: usize,
@@ -125,10 +118,9 @@ pub struct BenchmarkSummary {
     pub results_mean_output_throughput_token_per_s: f64,
     pub results_num_completed_requests: usize,
     pub results_num_completed_requests_per_min: f64,
-    
+
     pub timestamp: u64,
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Quantiles {
@@ -138,6 +130,134 @@ pub struct Quantiles {
     pub p90: f64,
     pub p95: f64,
     pub p99: f64,
+}
+
+pub fn print_summary_to_stdout(
+    successful_results: &[BenchmarkResult],
+    num_errors: usize,
+    total_output_tokens: u64,
+    start_time: std::time::Instant,
+    end_time: std::time::Instant,
+) {
+    let total_time_s = end_time.duration_since(start_time).as_secs_f64();
+
+    let mut inter_token_vec = Vec::new();
+    let mut ttft_vec = Vec::new();
+    let mut e2e_vec = Vec::new();
+    let mut throughput_vec = Vec::new();
+    let mut in_tokens_vec = Vec::new();
+    let mut out_tokens_vec = Vec::new();
+
+    for br in successful_results {
+        inter_token_vec.push(br.inter_token_latency_s);
+        ttft_vec.push(br.ttft.as_secs_f64());
+        e2e_vec.push(br.total_latency.as_secs_f64());
+        throughput_vec.push(br.throughput);
+        in_tokens_vec.push(br.input_tokens as f64);
+        out_tokens_vec.push(br.output_tokens as f64);
+    }
+
+    let inter_stats = compute_stats_for_flatten(&inter_token_vec);
+    let ttft_stats = compute_stats_for_flatten(&ttft_vec);
+    let e2e_stats = compute_stats_for_flatten(&e2e_vec);
+    let thr_stats = compute_stats_for_flatten(&throughput_vec);
+    let in_stats = compute_stats_for_flatten(&in_tokens_vec);
+    let out_stats = compute_stats_for_flatten(&out_tokens_vec);
+
+    println!();
+    println!("inter_token_latency_s");
+    println!("    p25 = {}", inter_stats.quantiles.p25);
+    println!("    p50 = {}", inter_stats.quantiles.p50);
+    println!("    p75 = {}", inter_stats.quantiles.p75);
+    println!("    p90 = {}", inter_stats.quantiles.p90);
+    println!("    p95 = {}", inter_stats.quantiles.p95);
+    println!("    p99 = {}", inter_stats.quantiles.p99);
+    println!("    mean = {}", inter_stats.mean);
+    println!("    min = {}", inter_stats.min);
+    println!("    max = {}", inter_stats.max);
+    println!("    stddev = {}", inter_stats.stddev);
+
+    println!("ttft_s");
+    println!("    p25 = {}", ttft_stats.quantiles.p25);
+    println!("    p50 = {}", ttft_stats.quantiles.p50);
+    println!("    p75 = {}", ttft_stats.quantiles.p75);
+    println!("    p90 = {}", ttft_stats.quantiles.p90);
+    println!("    p95 = {}", ttft_stats.quantiles.p95);
+    println!("    p99 = {}", ttft_stats.quantiles.p99);
+    println!("    mean = {}", ttft_stats.mean);
+    println!("    min = {}", ttft_stats.min);
+    println!("    max = {}", ttft_stats.max);
+    println!("    stddev = {}", ttft_stats.stddev);
+
+    println!("end_to_end_latency_s");
+    println!("    p25 = {}", e2e_stats.quantiles.p25);
+    println!("    p50 = {}", e2e_stats.quantiles.p50);
+    println!("    p75 = {}", e2e_stats.quantiles.p75);
+    println!("    p90 = {}", e2e_stats.quantiles.p90);
+    println!("    p95 = {}", e2e_stats.quantiles.p95);
+    println!("    p99 = {}", e2e_stats.quantiles.p99);
+    println!("    mean = {}", e2e_stats.mean);
+    println!("    min = {}", e2e_stats.min);
+    println!("    max = {}", e2e_stats.max);
+    println!("    stddev = {}", e2e_stats.stddev);
+
+    println!("request_output_throughput_token_per_s");
+    println!("    p25 = {}", thr_stats.quantiles.p25);
+    println!("    p50 = {}", thr_stats.quantiles.p50);
+    println!("    p75 = {}", thr_stats.quantiles.p75);
+    println!("    p90 = {}", thr_stats.quantiles.p90);
+    println!("    p95 = {}", thr_stats.quantiles.p95);
+    println!("    p99 = {}", thr_stats.quantiles.p99);
+    println!("    mean = {}", thr_stats.mean);
+    println!("    min = {}", thr_stats.min);
+    println!("    max = {}", thr_stats.max);
+    println!("    stddev = {}", thr_stats.stddev);
+
+    println!("number_input_tokens");
+    println!("    p25 = {}", in_stats.quantiles.p25);
+    println!("    p50 = {}", in_stats.quantiles.p50);
+    println!("    p75 = {}", in_stats.quantiles.p75);
+    println!("    p90 = {}", in_stats.quantiles.p90);
+    println!("    p95 = {}", in_stats.quantiles.p95);
+    println!("    p99 = {}", in_stats.quantiles.p99);
+    println!("    mean = {}", in_stats.mean);
+    println!("    min = {}", in_stats.min as u32);
+    println!("    max = {}", in_stats.max as u32);
+    println!("    stddev = {}", in_stats.stddev);
+
+    println!("number_output_tokens");
+    println!("    p25 = {}", out_stats.quantiles.p25);
+    println!("    p50 = {}", out_stats.quantiles.p50);
+    println!("    p75 = {}", out_stats.quantiles.p75);
+    println!("    p90 = {}", out_stats.quantiles.p90);
+    println!("    p95 = {}", out_stats.quantiles.p95);
+    println!("    p99 = {}", out_stats.quantiles.p99);
+    println!("    mean = {}", out_stats.mean);
+    println!("    min = {}", out_stats.min as u32);
+    println!("    max = {}", out_stats.max as u32);
+    println!("    stddev = {}", out_stats.stddev);
+
+    println!("Number Of Errored Requests: {}", num_errors);
+
+    let overall_output_throughput = if total_time_s > 0.0 {
+        total_output_tokens as f64 / total_time_s
+    } else {
+        0.0
+    };
+    println!("Overall Output Throughput: {}", overall_output_throughput);
+
+    let num_completed_requests = successful_results.len();
+    println!("Number Of Completed Requests: {}", num_completed_requests);
+
+    let completed_requests_per_min = if total_time_s > 0.0 {
+        num_completed_requests as f64 / total_time_s * 60.0
+    } else {
+        0.0
+    };
+    println!(
+        "Completed Requests Per Minute: {}",
+        completed_requests_per_min
+    );
 }
 
 pub fn write_results_json(
@@ -327,8 +447,7 @@ fn build_flattened_summary(
         mean_output_tokens,
         stddev_output_tokens,
         num_concurrent_requests,
-        
-        // Inter-token latency
+
         results_inter_token_latency_s_quantiles_p25: inter_stats.quantiles.p25,
         results_inter_token_latency_s_quantiles_p50: inter_stats.quantiles.p50,
         results_inter_token_latency_s_quantiles_p75: inter_stats.quantiles.p75,
@@ -339,8 +458,7 @@ fn build_flattened_summary(
         results_inter_token_latency_s_min: inter_stats.min,
         results_inter_token_latency_s_max: inter_stats.max,
         results_inter_token_latency_s_stddev: inter_stats.stddev,
-        
-        // TTFT
+
         results_ttft_s_quantiles_p25: ttft_stats.quantiles.p25,
         results_ttft_s_quantiles_p50: ttft_stats.quantiles.p50,
         results_ttft_s_quantiles_p75: ttft_stats.quantiles.p75,
@@ -351,8 +469,7 @@ fn build_flattened_summary(
         results_ttft_s_min: ttft_stats.min,
         results_ttft_s_max: ttft_stats.max,
         results_ttft_s_stddev: ttft_stats.stddev,
-        
-        // End-to-end latency
+
         results_end_to_end_latency_s_quantiles_p25: e2e_stats.quantiles.p25,
         results_end_to_end_latency_s_quantiles_p50: e2e_stats.quantiles.p50,
         results_end_to_end_latency_s_quantiles_p75: e2e_stats.quantiles.p75,
@@ -363,8 +480,7 @@ fn build_flattened_summary(
         results_end_to_end_latency_s_min: e2e_stats.min,
         results_end_to_end_latency_s_max: e2e_stats.max,
         results_end_to_end_latency_s_stddev: e2e_stats.stddev,
-        
-        // Request output throughput
+
         results_request_output_throughput_token_per_s_quantiles_p25: thr_stats.quantiles.p25,
         results_request_output_throughput_token_per_s_quantiles_p50: thr_stats.quantiles.p50,
         results_request_output_throughput_token_per_s_quantiles_p75: thr_stats.quantiles.p75,
@@ -375,8 +491,7 @@ fn build_flattened_summary(
         results_request_output_throughput_token_per_s_min: thr_stats.min,
         results_request_output_throughput_token_per_s_max: thr_stats.max,
         results_request_output_throughput_token_per_s_stddev: thr_stats.stddev,
-        
-        // Input tokens
+
         results_number_input_tokens_quantiles_p25: in_stats.quantiles.p25,
         results_number_input_tokens_quantiles_p50: in_stats.quantiles.p50,
         results_number_input_tokens_quantiles_p75: in_stats.quantiles.p75,
@@ -387,8 +502,7 @@ fn build_flattened_summary(
         results_number_input_tokens_min: format!("{}", in_stats.min as u32),
         results_number_input_tokens_max: format!("{}", in_stats.max as u32),
         results_number_input_tokens_stddev: in_stats.stddev,
-        
-        // Output tokens
+
         results_number_output_tokens_quantiles_p25: out_stats.quantiles.p25,
         results_number_output_tokens_quantiles_p50: out_stats.quantiles.p50,
         results_number_output_tokens_quantiles_p75: out_stats.quantiles.p75,
@@ -399,8 +513,7 @@ fn build_flattened_summary(
         results_number_output_tokens_min: format!("{}", out_stats.min as u32),
         results_number_output_tokens_max: format!("{}", out_stats.max as u32),
         results_number_output_tokens_stddev: out_stats.stddev,
-        
-        // Other fields
+
         results_num_requests_started: num_requests_started,
         results_error_rate: error_rate,
         results_number_errors: num_errors,
@@ -408,7 +521,7 @@ fn build_flattened_summary(
         results_mean_output_throughput_token_per_s: mean_output_throughput_token_per_s,
         results_num_completed_requests: num_completed_requests,
         results_num_completed_requests_per_min: num_completed_requests_per_min,
-        
+
         timestamp,
     }
 }
@@ -524,12 +637,10 @@ mod tests {
         assert_eq!(stats.max, 5.0);
         assert!(stats.stddev > 0.0);
 
-        // Test ordering invariant
         assert!(stats.min <= stats.quantiles.p25);
         assert!(stats.quantiles.p25 <= stats.quantiles.p50);
         assert!(stats.quantiles.p75 <= stats.max);
 
-        // Test empty case
         let empty_stats = compute_stats_for_flatten(&[]);
         assert_eq!(empty_stats.min, 0.0);
         assert_eq!(empty_stats.max, 0.0);

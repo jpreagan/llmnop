@@ -19,7 +19,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::time;
 
-use output::write_results_json;
+use output::{print_summary_to_stdout, write_results_json};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -139,6 +139,25 @@ async fn main() -> Result<()> {
         );
     }
 
+    let mut successful_results = Vec::new();
+    let mut total_output_tokens = 0_u64;
+    let num_errors = all_results.iter().filter(|r| r.is_err()).count();
+
+    for result in &all_results {
+        if let Ok(br) = result {
+            total_output_tokens += br.output_tokens as u64;
+            successful_results.push(br.clone());
+        }
+    }
+
+    print_summary_to_stdout(
+        &successful_results,
+        num_errors,
+        total_output_tokens,
+        overall_start,
+        overall_end,
+    );
+
     write_results_json(
         &args.results_dir,
         &args.model,
@@ -151,7 +170,5 @@ async fn main() -> Result<()> {
         overall_start,
         overall_end,
     )?;
-
-    println!("Benchmark complete!");
     Ok(())
 }
