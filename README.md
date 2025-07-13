@@ -11,14 +11,13 @@
 
 ## Features
 
-- **Streaming Metrics**: Accurately measures performance for streaming responses.
+- **Realistic Workload Simulation**: Generates prompts with variable input and output token lengths based on a normal distribution.
 - **Concurrent Benchmarking**: Send multiple requests in parallel to simulate real-world load.
 - **Detailed Performance Metrics**:
   - Time To First Token (TTFT)
   - Inter-Token Latency (average time between subsequent tokens)
-  - End-to-end Request Latency
   - Throughput (tokens/second)
-- **Realistic Workload Simulation**: Generates prompts with variable input and output token lengths based on a normal distribution.
+  - End-to-end Request Latency
 - **Detailed JSON Output**: Saves detailed per-request data and a final summary report.
 - **Tokenizer-Aware**: Uses Hugging Face `tokenizers` to count tokens for prompt generation and metric calculation.
 
