@@ -68,6 +68,13 @@ async fn main() -> Result<()> {
 
     tokio::pin!(timeout_future);
 
+    let spawn_benchmark = async move |client: Arc<Client<OpenAIConfig>>,
+                                      model: String,
+                                      prompt: String,
+                                      max_tokens: u32| {
+        run_benchmark(&client, &model, &prompt, max_tokens).await
+    };
+
     while next_request_index < args.max_num_completed_requests
         && in_flight.len() < args.num_concurrent_requests as usize
     {
@@ -76,9 +83,12 @@ async fn main() -> Result<()> {
         let prompt_clone = prompt.clone();
         let client_clone = client.clone();
 
-        in_flight.push(tokio::spawn(async move {
-            run_benchmark(&client_clone, &model_name, &prompt_clone, max_tokens).await
-        }));
+        in_flight.push(tokio::spawn(spawn_benchmark(
+            client_clone,
+            model_name,
+            prompt_clone,
+            max_tokens,
+        )));
         next_request_index += 1;
     }
 
@@ -112,9 +122,7 @@ async fn main() -> Result<()> {
                     let prompt_clone = prompt.clone();
                     let client_clone = client.clone();
 
-                    in_flight.push(tokio::spawn(async move {
-                        run_benchmark(&client_clone, &model_name, &prompt_clone, max_tokens).await
-                    }));
+                    in_flight.push(tokio::spawn(spawn_benchmark(client_clone, model_name, prompt_clone, max_tokens)));
                     next_request_index += 1;
                 }
             }
