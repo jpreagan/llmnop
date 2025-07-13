@@ -3,12 +3,8 @@ use async_openai::types::{
     ChatCompletionRequestUserMessageArgs, CreateChatCompletionRequestArgs,
     CreateChatCompletionStreamResponse,
 };
-use async_openai::{Client, config::OpenAIConfig, error::OpenAIError};
+use async_openai::{Client, config::OpenAIConfig};
 use futures::{Stream, StreamExt};
-
-fn map_openai_error(err: OpenAIError) -> anyhow::Error {
-    anyhow!("OpenAI error: {:?}", err)
-}
 
 pub async fn create_chat_completion_stream(
     client: &Client<OpenAIConfig>,
@@ -31,9 +27,10 @@ pub async fn create_chat_completion_stream(
         .chat()
         .create_stream(request)
         .await
-        .map_err(map_openai_error)?;
+        .map_err(|err| anyhow!("OpenAI error: {:?}", err))?;
 
-    let mapped_stream = stream.map(|chunk_result| chunk_result.map_err(map_openai_error));
+    let mapped_stream =
+        stream.map(|chunk_result| chunk_result.map_err(|err| anyhow!("OpenAI error: {:?}", err)));
 
     Ok(mapped_stream)
 }
