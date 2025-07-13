@@ -165,77 +165,34 @@ pub fn print_summary_to_stdout(
     let out_stats = compute_stats_for_flatten(&out_tokens_vec);
 
     println!();
-    println!("inter_token_latency_s");
-    println!("    p25 = {}", inter_stats.quantiles.p25);
-    println!("    p50 = {}", inter_stats.quantiles.p50);
-    println!("    p75 = {}", inter_stats.quantiles.p75);
-    println!("    p90 = {}", inter_stats.quantiles.p90);
-    println!("    p95 = {}", inter_stats.quantiles.p95);
-    println!("    p99 = {}", inter_stats.quantiles.p99);
-    println!("    mean = {}", inter_stats.mean);
-    println!("    min = {}", inter_stats.min);
-    println!("    max = {}", inter_stats.max);
-    println!("    stddev = {}", inter_stats.stddev);
 
-    println!("ttft_s");
-    println!("    p25 = {}", ttft_stats.quantiles.p25);
-    println!("    p50 = {}", ttft_stats.quantiles.p50);
-    println!("    p75 = {}", ttft_stats.quantiles.p75);
-    println!("    p90 = {}", ttft_stats.quantiles.p90);
-    println!("    p95 = {}", ttft_stats.quantiles.p95);
-    println!("    p99 = {}", ttft_stats.quantiles.p99);
-    println!("    mean = {}", ttft_stats.mean);
-    println!("    min = {}", ttft_stats.min);
-    println!("    max = {}", ttft_stats.max);
-    println!("    stddev = {}", ttft_stats.stddev);
+    let stats_to_print = [
+        ("inter_token_latency_s", &inter_stats, false),
+        ("ttft_s", &ttft_stats, false),
+        ("end_to_end_latency_s", &e2e_stats, false),
+        ("request_output_throughput_token_per_s", &thr_stats, false),
+        ("number_input_tokens", &in_stats, true),
+        ("number_output_tokens", &out_stats, true),
+    ];
 
-    println!("end_to_end_latency_s");
-    println!("    p25 = {}", e2e_stats.quantiles.p25);
-    println!("    p50 = {}", e2e_stats.quantiles.p50);
-    println!("    p75 = {}", e2e_stats.quantiles.p75);
-    println!("    p90 = {}", e2e_stats.quantiles.p90);
-    println!("    p95 = {}", e2e_stats.quantiles.p95);
-    println!("    p99 = {}", e2e_stats.quantiles.p99);
-    println!("    mean = {}", e2e_stats.mean);
-    println!("    min = {}", e2e_stats.min);
-    println!("    max = {}", e2e_stats.max);
-    println!("    stddev = {}", e2e_stats.stddev);
-
-    println!("request_output_throughput_token_per_s");
-    println!("    p25 = {}", thr_stats.quantiles.p25);
-    println!("    p50 = {}", thr_stats.quantiles.p50);
-    println!("    p75 = {}", thr_stats.quantiles.p75);
-    println!("    p90 = {}", thr_stats.quantiles.p90);
-    println!("    p95 = {}", thr_stats.quantiles.p95);
-    println!("    p99 = {}", thr_stats.quantiles.p99);
-    println!("    mean = {}", thr_stats.mean);
-    println!("    min = {}", thr_stats.min);
-    println!("    max = {}", thr_stats.max);
-    println!("    stddev = {}", thr_stats.stddev);
-
-    println!("number_input_tokens");
-    println!("    p25 = {}", in_stats.quantiles.p25);
-    println!("    p50 = {}", in_stats.quantiles.p50);
-    println!("    p75 = {}", in_stats.quantiles.p75);
-    println!("    p90 = {}", in_stats.quantiles.p90);
-    println!("    p95 = {}", in_stats.quantiles.p95);
-    println!("    p99 = {}", in_stats.quantiles.p99);
-    println!("    mean = {}", in_stats.mean);
-    println!("    min = {}", in_stats.min as u32);
-    println!("    max = {}", in_stats.max as u32);
-    println!("    stddev = {}", in_stats.stddev);
-
-    println!("number_output_tokens");
-    println!("    p25 = {}", out_stats.quantiles.p25);
-    println!("    p50 = {}", out_stats.quantiles.p50);
-    println!("    p75 = {}", out_stats.quantiles.p75);
-    println!("    p90 = {}", out_stats.quantiles.p90);
-    println!("    p95 = {}", out_stats.quantiles.p95);
-    println!("    p99 = {}", out_stats.quantiles.p99);
-    println!("    mean = {}", out_stats.mean);
-    println!("    min = {}", out_stats.min as u32);
-    println!("    max = {}", out_stats.max as u32);
-    println!("    stddev = {}", out_stats.stddev);
+    for (name, stats, format_as_int) in &stats_to_print {
+        println!("{}", name);
+        println!("    p25 = {}", stats.quantiles.p25);
+        println!("    p50 = {}", stats.quantiles.p50);
+        println!("    p75 = {}", stats.quantiles.p75);
+        println!("    p90 = {}", stats.quantiles.p90);
+        println!("    p95 = {}", stats.quantiles.p95);
+        println!("    p99 = {}", stats.quantiles.p99);
+        println!("    mean = {}", stats.mean);
+        if *format_as_int {
+            println!("    min = {}", stats.min as u32);
+            println!("    max = {}", stats.max as u32);
+        } else {
+            println!("    min = {}", stats.min);
+            println!("    max = {}", stats.max);
+        }
+        println!("    stddev = {}", stats.stddev);
+    }
 
     println!("Number Of Errored Requests: {}", num_errors);
 
