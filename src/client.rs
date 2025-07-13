@@ -1,9 +1,9 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use async_openai::types::{
     ChatCompletionRequestUserMessageArgs, CreateChatCompletionRequestArgs,
     CreateChatCompletionStreamResponse,
 };
-use async_openai::{config::OpenAIConfig, error::OpenAIError, Client};
+use async_openai::{Client, config::OpenAIConfig, error::OpenAIError};
 use futures::{Stream, StreamExt};
 
 fn map_openai_error(err: OpenAIError) -> anyhow::Error {

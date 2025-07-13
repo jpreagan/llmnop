@@ -8,12 +8,12 @@ mod tokens;
 
 use anyhow::{Context, Result};
 use args::Args;
-use async_openai::{config::OpenAIConfig, Client};
+use async_openai::{Client, config::OpenAIConfig};
 use benchmark::run_benchmark;
 use clap::Parser;
-use futures::{stream::FuturesUnordered, StreamExt};
+use futures::{StreamExt, stream::FuturesUnordered};
 use indicatif::{ProgressBar, ProgressStyle};
-use prompt::{generate_prompt, PromptConfig};
+use prompt::{PromptConfig, generate_prompt};
 use std::env;
 use std::sync::Arc;
 use std::time::{Duration, Instant};

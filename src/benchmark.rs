@@ -1,7 +1,7 @@
 use crate::client::create_chat_completion_stream;
 use crate::tokens;
 use anyhow::Result;
-use async_openai::{config::OpenAIConfig, Client};
+use async_openai::{Client, config::OpenAIConfig};
 use futures::StreamExt;
 use serde::Serialize;
 use std::time::{Duration, Instant};
