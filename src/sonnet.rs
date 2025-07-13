@@ -1,7 +1,7 @@
-use once_cell::sync::Lazy;
 use rand::seq::SliceRandom;
+use std::sync::LazyLock;
 
-static SONNET_LINES: Lazy<Vec<&'static str>> = Lazy::new(|| {
+static SONNET_LINES: LazyLock<Vec<&'static str>> = LazyLock::new(|| {
     vec![
         "Shall I compare thee to a summer's day?",
         "Thou art more lovely and more temperate:",

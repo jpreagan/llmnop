@@ -1031,7 +1031,6 @@ dependencies = [
  "clap",
  "futures",
  "indicatif 0.18.0",
- "once_cell",
  "rand 0.9.1",
  "rand_distr",
  "regex",

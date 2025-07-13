@@ -1,11 +1,10 @@
 use anyhow::{Result, anyhow};
-use once_cell::sync::Lazy;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use tokenizers::Tokenizer;
 
-static TOKENIZER_CACHE: Lazy<Mutex<HashMap<String, Arc<Tokenizer>>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
+static TOKENIZER_CACHE: LazyLock<Mutex<HashMap<String, Arc<Tokenizer>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 fn get_tokenizer(model_name: &str) -> Result<Arc<Tokenizer>> {
     let mut cache = TOKENIZER_CACHE.lock().unwrap();
