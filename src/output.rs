@@ -39,6 +39,7 @@ pub struct BenchmarkSummary {
     pub version: String,
     pub name: String,
     pub model: String,
+    pub tokenizer: String,
     pub mean_input_tokens: u32,
     pub stddev_input_tokens: u32,
     pub mean_output_tokens: u32,
@@ -220,6 +221,7 @@ pub fn print_summary_to_stdout(
 pub fn write_results_json(
     results_dir: &str,
     model: &str,
+    tokenizer: &str,
     mean_input_tokens: u32,
     stddev_input_tokens: u32,
     mean_output_tokens: u32,
@@ -299,6 +301,7 @@ pub fn write_results_json(
 
         let flattened = build_flattened_summary(
             model,
+            tokenizer,
             mean_input_tokens,
             stddev_input_tokens,
             mean_output_tokens,
@@ -322,6 +325,7 @@ pub fn write_results_json(
 
 fn build_flattened_summary(
     model: &str,
+    tokenizer: &str,
     mean_input_tokens: u32,
     stddev_input_tokens: u32,
     mean_output_tokens: u32,
@@ -391,7 +395,7 @@ fn build_flattened_summary(
         .as_secs();
 
     BenchmarkSummary {
-        version: "2023-08-31".to_string(),
+        version: "2025-10-05".to_string(),
         name: format!(
             "{}_{}_{}_summary",
             sanitize_filename::sanitize(model.replace('/', "-").replace('.', "-")),
@@ -399,6 +403,7 @@ fn build_flattened_summary(
             mean_output_tokens
         ),
         model: model.to_string(),
+        tokenizer: tokenizer.to_string(),
         mean_input_tokens,
         stddev_input_tokens,
         mean_output_tokens,
