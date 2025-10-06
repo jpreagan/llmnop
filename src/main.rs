@@ -181,6 +181,7 @@ async fn main() -> Result<()> {
     write_results_json(
         &args.results_dir,
         &args.model,
+        &tokenizer,
         args.mean_input_tokens,
         args.stddev_input_tokens,
         args.mean_output_tokens,
