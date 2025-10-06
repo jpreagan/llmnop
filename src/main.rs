@@ -33,6 +33,8 @@ async fn main() -> Result<()> {
         .with_api_base(api_base);
     let client = Arc::new(Client::with_config(openai_config));
 
+    let tokenizer = args.tokenizer.clone().unwrap_or_else(|| args.model.clone());
+
     let overall_start = Instant::now();
 
     let prompt_config = PromptConfig {
@@ -44,7 +46,7 @@ async fn main() -> Result<()> {
 
     let mut prompts_and_max_tokens = Vec::with_capacity(args.max_num_completed_requests as usize);
     for _ in 0..args.max_num_completed_requests {
-        let (prompt, target_output_tokens) = generate_prompt(&prompt_config, &args.model)?;
+        let (prompt, target_output_tokens) = generate_prompt(&prompt_config, &tokenizer)?;
         prompts_and_max_tokens.push((prompt, target_output_tokens));
     }
 
@@ -71,8 +73,9 @@ async fn main() -> Result<()> {
     let spawn_benchmark = async move |client: Arc<Client<OpenAIConfig>>,
                                       model: String,
                                       prompt: String,
-                                      max_tokens: u32| {
-        run_benchmark(&client, &model, &prompt, max_tokens).await
+                                      max_tokens: u32,
+                                      tokenizer: String| {
+        run_benchmark(&client, &model, &prompt, max_tokens, &tokenizer).await
     };
 
     while next_request_index < args.max_num_completed_requests
@@ -82,12 +85,14 @@ async fn main() -> Result<()> {
         let model_name = args.model.clone();
         let prompt_clone = prompt.clone();
         let client_clone = client.clone();
+        let tokenizer_clone = tokenizer.clone();
 
         in_flight.push(tokio::spawn(spawn_benchmark(
             client_clone,
             model_name,
             prompt_clone,
             max_tokens,
+            tokenizer_clone,
         )));
         next_request_index += 1;
     }
@@ -121,8 +126,15 @@ async fn main() -> Result<()> {
                     let model_name = args.model.clone();
                     let prompt_clone = prompt.clone();
                     let client_clone = client.clone();
+                    let tokenizer_clone = tokenizer.clone();
 
-                    in_flight.push(tokio::spawn(spawn_benchmark(client_clone, model_name, prompt_clone, max_tokens)));
+                    in_flight.push(tokio::spawn(spawn_benchmark(
+                        client_clone,
+                        model_name,
+                        prompt_clone,
+                        max_tokens,
+                        tokenizer_clone,
+                    )));
                     next_request_index += 1;
                 }
             }
@@ -169,6 +181,7 @@ async fn main() -> Result<()> {
     write_results_json(
         &args.results_dir,
         &args.model,
+        &tokenizer,
         args.mean_input_tokens,
         args.stddev_input_tokens,
         args.mean_output_tokens,

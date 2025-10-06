@@ -11,7 +11,7 @@ pub struct PromptConfig {
     pub stddev_output_tokens: u32,
 }
 
-pub fn generate_prompt(config: &PromptConfig, model_name: &str) -> Result<(String, u32)> {
+pub fn generate_prompt(config: &PromptConfig, tokenizer: &str) -> Result<(String, u32)> {
     let mut rng = rand::rng();
 
     let input_token_dist = Normal::new(
@@ -41,7 +41,7 @@ pub fn generate_prompt(config: &PromptConfig, model_name: &str) -> Result<(Strin
         target_output_tokens
     );
 
-    let base_token_count = tokens::count_tokens(&prompt, model_name)?;
+    let base_token_count = tokens::count_tokens(&prompt, tokenizer)?;
 
     while num_prompt_tokens < base_token_count {
         num_prompt_tokens = input_token_dist
@@ -58,13 +58,13 @@ pub fn generate_prompt(config: &PromptConfig, model_name: &str) -> Result<(Strin
     let mut sampling_lines = true;
     while sampling_lines {
         for line in &sonnet_lines {
-            let line_token_count = tokens::count_tokens(line, model_name)?;
+            let line_token_count = tokens::count_tokens(line, tokenizer)?;
 
             if remaining_prompt_tokens < line_token_count {
                 let truncated_line =
-                    tokens::truncate_to_token_count(line, remaining_prompt_tokens, model_name)?;
+                    tokens::truncate_to_token_count(line, remaining_prompt_tokens, tokenizer)?;
                 prompt.push_str(&truncated_line);
-                remaining_prompt_tokens -= tokens::count_tokens(&truncated_line, model_name)?;
+                remaining_prompt_tokens -= tokens::count_tokens(&truncated_line, tokenizer)?;
                 sampling_lines = false;
                 break;
             } else {

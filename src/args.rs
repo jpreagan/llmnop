@@ -6,6 +6,9 @@ pub struct Args {
     #[arg(short, long)]
     pub model: String,
 
+    #[arg(long)]
+    pub tokenizer: Option<String>,
+
     #[arg(long, default_value = "1")]
     pub max_num_completed_requests: u32,
 
