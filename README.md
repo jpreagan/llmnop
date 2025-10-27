@@ -23,25 +23,27 @@
 
 ## Installation
 
-### 1. Use the installer script (recommended)
+- **Quickstart (recommended)**
 
-The installer script will download and install the correct binary for your architecture and platform:
+  ```bash
+  curl -sSfL https://github.com/jpreagan/llmnop/releases/latest/download/llmnop-installer.sh | sh
+  ```
 
-```bash
-curl -sSfL https://github.com/jpreagan/llmnop/releases/latest/download/llmnop-installer.sh | sh
-```
+  The installer places `llmnop` in **`$XDG_BIN_HOME`** or **`~/.local/bin`**. Ensure that directory is on your `PATH` before running `llmnop`.
 
-### 2. Download a precompiled binary
+- **Homebrew**
 
-Grab the tarball for your platform from the Releases page, extract the binary, and place it somewhere on your PATH.
+  ```bash
+  brew install jpreagan/tap/llmnop
+  ```
 
-### 3. Build from source
+- **Build from source**
 
-```bash
-git clone https://github.com/jpreagan/llmnop.git
-cd llmnop
-cargo build --release
-```
+  ```bash
+  git clone https://github.com/jpreagan/llmnop.git
+  cd llmnop
+  cargo build --release
+  ```
 
 ## Usage
 
@@ -68,7 +70,7 @@ llmnop [OPTIONS] --model <MODEL>
 ### Example
 
 ```bash
-export OPENAI_API_BASE=http://localhost:8000
+export OPENAI_API_BASE=http://localhost:8000/v1
 export OPENAI_API_KEY=token-abc123
 
 llmnop \
