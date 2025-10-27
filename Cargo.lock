@@ -651,6 +651,7 @@ dependencies = [
  "libc",
  "log",
  "rand 0.9.2",
+ "reqwest",
  "serde",
  "serde_json",
  "thiserror 2.0.12",
@@ -732,6 +733,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tower-service",
+ "webpki-roots 1.0.1",
 ]
 
 [[package]]
@@ -1523,6 +1525,7 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-streams",
  "web-sys",
+ "webpki-roots 1.0.1",
 ]
 
 [[package]]
