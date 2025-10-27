@@ -9,7 +9,7 @@ pub struct Args {
     #[arg(long)]
     pub tokenizer: Option<String>,
 
-    #[arg(long, default_value = "1")]
+    #[arg(long, default_value = "2")]
     pub max_num_completed_requests: u32,
 
     #[arg(long, default_value = "1")]
