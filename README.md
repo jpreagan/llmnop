@@ -1,4 +1,3 @@
-<!-- Centered version -->
 <p align="center">
   <img src="assets/llmnop.png" alt="llmnop" width="420">
 </p>
@@ -29,7 +28,7 @@
   curl -sSfL https://github.com/jpreagan/llmnop/releases/latest/download/llmnop-installer.sh | sh
   ```
 
-  The installer places `llmnop` in **`$XDG_BIN_HOME`** or **`~/.local/bin`**. Ensure that directory is on your `PATH` before running `llmnop`.
+  The installer places `llmnop` in `$XDG_BIN_HOME` or `~/.local/bin`. Ensure that directory is on your `PATH` before running `llmnop`.
 
 - **Homebrew**
 
@@ -55,7 +54,8 @@ llmnop [OPTIONS] --model <MODEL>
 
 ```
 -m, --model <MODEL>
-    --max-num-completed-requests <MAX_NUM_COMPLETED_REQUESTS>  [default: 1]
+    --tokenizer <TOKENIZER>
+    --max-num-completed-requests <MAX_NUM_COMPLETED_REQUESTS>  [default: 2]
     --num-concurrent-requests <NUM_CONCURRENT_REQUESTS>        [default: 1]
     --mean-input-tokens <MEAN_INPUT_TOKENS>                    [default: 550]
     --stddev-input-tokens <STDDEV_INPUT_TOKENS>                [default: 150]
@@ -65,6 +65,22 @@ llmnop [OPTIONS] --model <MODEL>
     --timeout <TIMEOUT>                                        [default: 600]
 -h, --help                                                     Print help
 -V, --version                                                  Print version
+```
+
+#### Tokenizer
+
+By default, `llmnop` uses the model name as the tokenizer for token counting.
+
+Use `--tokenizer` when the served model name doesn't match a Hugging Face tokenizer name, or when you want a different tokenizer for counting.
+
+Examples:
+
+```bash
+# Served name differs from HF tokenizer name
+llmnop --model gpt-oss:20b --tokenizer openai/gpt-oss-20b
+
+# Force a common tokenizer for consistent counting
+llmnop --model openai/gpt-oss-20b --tokenizer hf-internal-testing/llama-tokenizer
 ```
 
 ### Example
