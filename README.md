@@ -63,6 +63,7 @@ llmnop [OPTIONS] --model <MODEL>
     --stddev-output-tokens <STDDEV_OUTPUT_TOKENS>              [default: 10]
     --results-dir <RESULTS_DIR>                                [default: result_outputs]
     --timeout <TIMEOUT>                                        [default: 600]
+    --no-progress                                              Disable the progress bar (useful for non-interactive environments)
 -h, --help                                                     Print help
 -V, --version                                                  Print version
 ```

@@ -15,6 +15,7 @@ use futures::{StreamExt, stream::FuturesUnordered};
 use indicatif::{ProgressBar, ProgressStyle};
 use prompt::{PromptConfig, generate_prompt};
 use std::env;
+use std::io::{self, IsTerminal};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::time;
@@ -55,14 +56,23 @@ async fn main() -> Result<()> {
     let mut in_flight = FuturesUnordered::new();
     let mut next_request_index = 0;
 
-    let pb = ProgressBar::new(args.max_num_completed_requests as u64);
-    pb.set_style(
-        ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] {bar:40.cyan/blue} {pos}/{len} ({eta})")
-            .unwrap()
-            .progress_chars("##-"),
-    );
-    pb.tick();
+    let disable_progress = args.no_progress || !io::stderr().is_terminal();
+
+    let pb = if disable_progress {
+        ProgressBar::hidden()
+    } else {
+        let pb = ProgressBar::new(args.max_num_completed_requests as u64);
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template(
+                    "{spinner:.green} [{elapsed_precise}] {bar:40.cyan/blue} {pos}/{len} ({eta})",
+                )
+                .unwrap()
+                .progress_chars("##-"),
+        );
+        pb.tick();
+        pb
+    };
 
     let timeout_duration = Duration::from_secs(args.timeout);
     let timeout_future = time::sleep(timeout_duration);

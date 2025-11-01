@@ -32,4 +32,7 @@ pub struct Args {
 
     #[arg(long, default_value = "600")]
     pub timeout: u64,
+
+    #[arg(long, help = "Disable the progress bar (useful for non-interactive environments)")]
+    pub no_progress: bool,
 }
