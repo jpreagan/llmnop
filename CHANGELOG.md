@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.3.1
+
+Released on 2025-10-31
+
 ### Enhancements
 
 - `--no-progress` CLI flag to disable the progress bar for non-interactive environments.
