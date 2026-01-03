@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Bug fixes
+
+- Compute per-request output throughput over the generation window (first streamed token → last streamed token), rather than full request wall time.
+
 ## 0.3.1
 
 Released on 2025-10-31
