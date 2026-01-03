@@ -279,7 +279,7 @@ pub fn write_results_json(
     {
         let file_name = format!(
             "{}_{}_{}_individual_responses.json",
-            sanitize_filename::sanitize(model.replace('/', "-").replace('.', "-")),
+            sanitize_filename::sanitize(model.replace(['/', '.'], "-")),
             mean_input_tokens,
             mean_output_tokens
         );
@@ -293,7 +293,7 @@ pub fn write_results_json(
     {
         let summary_filename = format!(
             "{}_{}_{}_summary.json",
-            sanitize_filename::sanitize(model.replace('/', "-").replace('.', "-")),
+            sanitize_filename::sanitize(model.replace(['/', '.'], "-")),
             mean_input_tokens,
             mean_output_tokens
         );
@@ -398,7 +398,7 @@ fn build_flattened_summary(
         version: "2025-10-05".to_string(),
         name: format!(
             "{}_{}_{}_summary",
-            sanitize_filename::sanitize(model.replace('/', "-").replace('.', "-")),
+            sanitize_filename::sanitize(model.replace(['/', '.'], "-")),
             mean_input_tokens,
             mean_output_tokens
         ),
