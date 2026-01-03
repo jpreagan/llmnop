@@ -20,7 +20,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::time;
 
-use output::{print_summary_to_stdout, write_results_json};
+use output::{BenchmarkConfig, print_summary_to_stdout, write_results_json};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -186,15 +186,19 @@ async fn main() -> Result<()> {
         overall_end,
     );
 
+    let config = BenchmarkConfig {
+        model: &args.model,
+        tokenizer: &tokenizer,
+        mean_input_tokens: args.mean_input_tokens,
+        stddev_input_tokens: args.stddev_input_tokens,
+        mean_output_tokens: args.mean_output_tokens,
+        stddev_output_tokens: args.stddev_output_tokens,
+        num_concurrent_requests: args.num_concurrent_requests,
+    };
+
     write_results_json(
         &args.results_dir,
-        &args.model,
-        &tokenizer,
-        args.mean_input_tokens,
-        args.stddev_input_tokens,
-        args.mean_output_tokens,
-        args.stddev_output_tokens,
-        args.num_concurrent_requests,
+        &config,
         &all_results,
         overall_start,
         overall_end,

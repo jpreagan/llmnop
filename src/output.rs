@@ -4,6 +4,17 @@ use std::fs::{File, create_dir_all};
 use std::io::Write;
 use std::path::Path;
 
+/// Configuration parameters for a benchmark run.
+pub struct BenchmarkConfig<'a> {
+    pub model: &'a str,
+    pub tokenizer: &'a str,
+    pub mean_input_tokens: u32,
+    pub stddev_input_tokens: u32,
+    pub mean_output_tokens: u32,
+    pub stddev_output_tokens: u32,
+    pub num_concurrent_requests: u32,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndividualResponse {
     #[serde(rename = "error_code")]
@@ -220,13 +231,7 @@ pub fn print_summary_to_stdout(
 
 pub fn write_results_json(
     results_dir: &str,
-    model: &str,
-    tokenizer: &str,
-    mean_input_tokens: u32,
-    stddev_input_tokens: u32,
-    mean_output_tokens: u32,
-    stddev_output_tokens: u32,
-    num_concurrent_requests: u32,
+    config: &BenchmarkConfig,
     all_results: &[Result<BenchmarkResult, String>],
     total_start_time: std::time::Instant,
     total_end_time: std::time::Instant,
@@ -279,9 +284,9 @@ pub fn write_results_json(
     {
         let file_name = format!(
             "{}_{}_{}_individual_responses.json",
-            sanitize_filename::sanitize(model.replace(['/', '.'], "-")),
-            mean_input_tokens,
-            mean_output_tokens
+            sanitize_filename::sanitize(config.model.replace(['/', '.'], "-")),
+            config.mean_input_tokens,
+            config.mean_output_tokens
         );
 
         let path = Path::new(results_dir).join(file_name);
@@ -293,20 +298,14 @@ pub fn write_results_json(
     {
         let summary_filename = format!(
             "{}_{}_{}_summary.json",
-            sanitize_filename::sanitize(model.replace(['/', '.'], "-")),
-            mean_input_tokens,
-            mean_output_tokens
+            sanitize_filename::sanitize(config.model.replace(['/', '.'], "-")),
+            config.mean_input_tokens,
+            config.mean_output_tokens
         );
         let summary_path = Path::new(results_dir).join(summary_filename);
 
         let flattened = build_flattened_summary(
-            model,
-            tokenizer,
-            mean_input_tokens,
-            stddev_input_tokens,
-            mean_output_tokens,
-            stddev_output_tokens,
-            num_concurrent_requests,
+            config,
             &successful_results,
             all_results.len(),
             all_results.iter().filter(|r| r.is_err()).count(),
@@ -324,13 +323,7 @@ pub fn write_results_json(
 }
 
 fn build_flattened_summary(
-    model: &str,
-    tokenizer: &str,
-    mean_input_tokens: u32,
-    stddev_input_tokens: u32,
-    mean_output_tokens: u32,
-    stddev_output_tokens: u32,
-    num_concurrent_requests: u32,
+    config: &BenchmarkConfig,
     successful_results: &[BenchmarkResult],
     num_requests_started: usize,
     num_errors: usize,
@@ -398,17 +391,17 @@ fn build_flattened_summary(
         version: "2025-10-05".to_string(),
         name: format!(
             "{}_{}_{}_summary",
-            sanitize_filename::sanitize(model.replace(['/', '.'], "-")),
-            mean_input_tokens,
-            mean_output_tokens
+            sanitize_filename::sanitize(config.model.replace(['/', '.'], "-")),
+            config.mean_input_tokens,
+            config.mean_output_tokens
         ),
-        model: model.to_string(),
-        tokenizer: tokenizer.to_string(),
-        mean_input_tokens,
-        stddev_input_tokens,
-        mean_output_tokens,
-        stddev_output_tokens,
-        num_concurrent_requests,
+        model: config.model.to_string(),
+        tokenizer: config.tokenizer.to_string(),
+        mean_input_tokens: config.mean_input_tokens,
+        stddev_input_tokens: config.stddev_input_tokens,
+        mean_output_tokens: config.mean_output_tokens,
+        stddev_output_tokens: config.stddev_output_tokens,
+        num_concurrent_requests: config.num_concurrent_requests,
 
         results_inter_token_latency_s_quantiles_p25: inter_stats.quantiles.p25,
         results_inter_token_latency_s_quantiles_p50: inter_stats.quantiles.p50,
