@@ -15,8 +15,8 @@
 - **Detailed Performance Metrics**:
   - Time To First Token (TTFT)
   - Inter-Token Latency (average time between subsequent tokens)
-  - Per-request Output Throughput (tokens/second during generation window)
-  - End-to-end Request Latency (wall-clock)
+  - Per-request Output Throughput
+  - End-to-end Request Latency
 - **Detailed JSON Output**: Saves detailed per-request data and a final summary report.
 - **Tokenizer-Aware**: Uses Hugging Face `tokenizers` to count tokens for prompt generation and metric calculation.
 
