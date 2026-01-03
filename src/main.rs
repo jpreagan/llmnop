@@ -173,11 +173,9 @@ async fn main() -> Result<()> {
     let mut total_output_tokens = 0_u64;
     let num_errors = all_results.iter().filter(|r| r.is_err()).count();
 
-    for result in &all_results {
-        if let Ok(br) = result {
-            total_output_tokens += br.output_tokens as u64;
-            successful_results.push(br.clone());
-        }
+    for br in all_results.iter().flatten() {
+        total_output_tokens += br.output_tokens as u64;
+        successful_results.push(br.clone());
     }
 
     print_summary_to_stdout(
