@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Enhancements
+
+- Support reasoning models with correct token counts, throughput, and latency metrics. ([#16](https://github.com/jpreagan/llmnop/pull/16))
+- Add `--mean-output-tokens` as optional (default: none) to avoid constraining model output. ([#16](https://github.com/jpreagan/llmnop/pull/16))
+
 ### Bug fixes
 
 - Compute per-request output throughput over the generation window (first streamed token → last streamed token), rather than full request wall time.
