@@ -1,36 +1,60 @@
 use anyhow::{Context, Result, anyhow};
-use async_openai::types::{
+use async_openai::Client;
+use async_openai::config::OpenAIConfig;
+use async_openai::types::chat::{
     ChatCompletionRequestUserMessageArgs, CreateChatCompletionRequestArgs,
-    CreateChatCompletionStreamResponse,
 };
-use async_openai::{Client, config::OpenAIConfig};
 use futures::{Stream, StreamExt};
+use serde::Deserialize;
+use std::pin::Pin;
+
+#[derive(Debug, Deserialize)]
+pub struct StreamDelta {
+    pub content: Option<String>,
+    pub reasoning_content: Option<String>,
+    pub reasoning: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct StreamChoice {
+    pub delta: StreamDelta,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct StreamChunk {
+    pub choices: Vec<StreamChoice>,
+}
 
 pub async fn create_chat_completion_stream(
     client: &Client<OpenAIConfig>,
     model: &str,
     prompt: &str,
-    max_tokens: u32,
-) -> Result<impl Stream<Item = Result<CreateChatCompletionStreamResponse, anyhow::Error>>> {
-    let request = CreateChatCompletionRequestArgs::default()
+    max_tokens: Option<u32>,
+) -> Result<Pin<Box<dyn Stream<Item = Result<StreamChunk, anyhow::Error>> + Send>>> {
+    let mut builder = CreateChatCompletionRequestArgs::default();
+    builder
         .model(model)
-        .max_tokens(max_tokens)
+        .stream(true)
         .messages([ChatCompletionRequestUserMessageArgs::default()
             .content(prompt)
             .build()
             .context("Failed to build message")?
-            .into()])
-        .build()
-        .context("Failed to build request")?;
+            .into()]);
+
+    if let Some(tokens) = max_tokens {
+        builder.max_tokens(tokens);
+    }
+
+    let request = builder.build().context("Failed to build request")?;
 
     let stream = client
         .chat()
-        .create_stream(request)
+        .create_stream_byot::<_, StreamChunk>(request)
         .await
         .map_err(|err| anyhow!("OpenAI error: {:?}", err))?;
 
     let mapped_stream =
         stream.map(|chunk_result| chunk_result.map_err(|err| anyhow!("OpenAI error: {:?}", err)));
 
-    Ok(mapped_stream)
+    Ok(Box::pin(mapped_stream))
 }

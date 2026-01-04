@@ -41,14 +41,12 @@ async fn main() -> Result<()> {
     let prompt_config = PromptConfig {
         mean_input_tokens: args.mean_input_tokens,
         stddev_input_tokens: args.stddev_input_tokens,
-        mean_output_tokens: args.mean_output_tokens,
-        stddev_output_tokens: args.stddev_output_tokens,
     };
 
-    let mut prompts_and_max_tokens = Vec::with_capacity(args.max_num_completed_requests as usize);
+    let mut prompts = Vec::with_capacity(args.max_num_completed_requests as usize);
     for _ in 0..args.max_num_completed_requests {
-        let (prompt, target_output_tokens) = generate_prompt(&prompt_config, &tokenizer)?;
-        prompts_and_max_tokens.push((prompt, target_output_tokens));
+        let prompt = generate_prompt(&prompt_config, &tokenizer)?;
+        prompts.push(prompt);
     }
 
     let mut all_results = Vec::with_capacity(args.max_num_completed_requests as usize);
@@ -83,7 +81,7 @@ async fn main() -> Result<()> {
     let spawn_benchmark = async move |client: Arc<Client<OpenAIConfig>>,
                                       model: String,
                                       prompt: String,
-                                      max_tokens: u32,
+                                      max_tokens: Option<u32>,
                                       tokenizer: String| {
         run_benchmark(&client, &model, &prompt, max_tokens, &tokenizer).await
     };
@@ -91,11 +89,12 @@ async fn main() -> Result<()> {
     while next_request_index < args.max_num_completed_requests
         && in_flight.len() < args.num_concurrent_requests as usize
     {
-        let (ref prompt, max_tokens) = prompts_and_max_tokens[next_request_index as usize];
+        let prompt = &prompts[next_request_index as usize];
         let model_name = args.model.clone();
         let prompt_clone = prompt.clone();
         let client_clone = client.clone();
         let tokenizer_clone = tokenizer.clone();
+        let max_tokens = args.mean_output_tokens;
 
         in_flight.push(tokio::spawn(spawn_benchmark(
             client_clone,
@@ -132,11 +131,12 @@ async fn main() -> Result<()> {
                 pb.inc(1);
 
                 if !timeout_occurred && next_request_index < args.max_num_completed_requests {
-                    let (ref prompt, max_tokens) = prompts_and_max_tokens[next_request_index as usize];
+                    let prompt = &prompts[next_request_index as usize];
                     let model_name = args.model.clone();
                     let prompt_clone = prompt.clone();
                     let client_clone = client.clone();
                     let tokenizer_clone = tokenizer.clone();
+                    let max_tokens = args.mean_output_tokens;
 
                     in_flight.push(tokio::spawn(spawn_benchmark(
                         client_clone,
@@ -171,10 +171,12 @@ async fn main() -> Result<()> {
 
     let mut successful_results = Vec::new();
     let mut total_output_tokens = 0_u64;
+    let mut total_reasoning_tokens = 0_u64;
     let num_errors = all_results.iter().filter(|r| r.is_err()).count();
 
     for br in all_results.iter().flatten() {
         total_output_tokens += br.output_tokens as u64;
+        total_reasoning_tokens += br.reasoning_tokens as u64;
         successful_results.push(br.clone());
     }
 
@@ -182,6 +184,7 @@ async fn main() -> Result<()> {
         &successful_results,
         num_errors,
         total_output_tokens,
+        total_reasoning_tokens,
         overall_start,
         overall_end,
     );

@@ -7,11 +7,9 @@ use rand_distr::Normal;
 pub struct PromptConfig {
     pub mean_input_tokens: u32,
     pub stddev_input_tokens: u32,
-    pub mean_output_tokens: u32,
-    pub stddev_output_tokens: u32,
 }
 
-pub fn generate_prompt(config: &PromptConfig, tokenizer: &str) -> Result<(String, u32)> {
+pub fn generate_prompt(config: &PromptConfig, tokenizer: &str) -> Result<String> {
     let mut rng = rand::rng();
 
     let input_token_dist = Normal::new(
@@ -19,39 +17,14 @@ pub fn generate_prompt(config: &PromptConfig, tokenizer: &str) -> Result<(String
         config.stddev_input_tokens as f64,
     )?;
 
-    let output_token_dist = Normal::new(
-        config.mean_output_tokens as f64,
-        config.stddev_output_tokens as f64,
-    )?;
-
-    let target_output_tokens = output_token_dist
+    let num_prompt_tokens = input_token_dist
         .sample_iter(&mut rng)
         .map(|x| x.round() as u32)
         .find(|&x| x > 0)
         .unwrap();
 
-    let mut num_prompt_tokens = input_token_dist
-        .sample_iter(&mut rng)
-        .map(|x| x.round() as u32)
-        .find(|&x| x > 0)
-        .unwrap();
-
-    let mut prompt = format!(
-        "Randomly stream lines from the following text with {} output tokens. Don't generate eos tokens:\n\n",
-        target_output_tokens
-    );
-
-    let base_token_count = tokens::count_tokens(&prompt, tokenizer)?;
-
-    while num_prompt_tokens < base_token_count {
-        num_prompt_tokens = input_token_dist
-            .sample_iter(&mut rng)
-            .map(|x| x.round() as u32)
-            .find(|&x| x > 0)
-            .unwrap();
-    }
-
-    let mut remaining_prompt_tokens = num_prompt_tokens - base_token_count;
+    let mut prompt = String::new();
+    let mut remaining_prompt_tokens = num_prompt_tokens;
 
     let sonnet_lines = get_shuffled_sonnet_lines();
 
@@ -75,5 +48,5 @@ pub fn generate_prompt(config: &PromptConfig, tokenizer: &str) -> Result<(String
         }
     }
 
-    Ok((prompt, target_output_tokens))
+    Ok(prompt)
 }
