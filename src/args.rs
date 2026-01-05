@@ -21,8 +21,8 @@ pub struct Args {
     #[arg(long, default_value = "150")]
     pub stddev_input_tokens: u32,
 
-    #[arg(long, default_value = "150")]
-    pub mean_output_tokens: u32,
+    #[arg(long, help = "[default: none]")]
+    pub mean_output_tokens: Option<u32>,
 
     #[arg(long, default_value = "10")]
     pub stddev_output_tokens: u32,

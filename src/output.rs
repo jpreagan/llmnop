@@ -4,13 +4,12 @@ use std::fs::{File, create_dir_all};
 use std::io::Write;
 use std::path::Path;
 
-/// Configuration parameters for a benchmark run.
 pub struct BenchmarkConfig<'a> {
     pub model: &'a str,
     pub tokenizer: &'a str,
     pub mean_input_tokens: u32,
     pub stddev_input_tokens: u32,
-    pub mean_output_tokens: u32,
+    pub mean_output_tokens: Option<u32>,
     pub stddev_output_tokens: u32,
     pub num_concurrent_requests: u32,
 }
@@ -29,6 +28,9 @@ pub struct IndividualResponse {
     #[serde(rename = "ttft_s")]
     pub ttft_s: Option<f64>,
 
+    #[serde(rename = "ttfo_s")]
+    pub ttfo_s: Option<f64>,
+
     #[serde(rename = "end_to_end_latency_s")]
     pub end_to_end_latency_s: Option<f64>,
 
@@ -40,6 +42,9 @@ pub struct IndividualResponse {
 
     #[serde(rename = "number_output_tokens")]
     pub number_output_tokens: Option<u32>,
+
+    #[serde(rename = "number_reasoning_tokens")]
+    pub number_reasoning_tokens: Option<u32>,
 
     #[serde(rename = "number_input_tokens")]
     pub number_input_tokens: Option<u32>,
@@ -53,8 +58,10 @@ pub struct BenchmarkSummary {
     pub tokenizer: String,
     pub mean_input_tokens: u32,
     pub stddev_input_tokens: u32,
-    pub mean_output_tokens: u32,
-    pub stddev_output_tokens: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mean_output_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stddev_output_tokens: Option<u32>,
     pub num_concurrent_requests: u32,
 
     pub results_inter_token_latency_s_quantiles_p25: f64,
@@ -78,6 +85,17 @@ pub struct BenchmarkSummary {
     pub results_ttft_s_min: f64,
     pub results_ttft_s_max: f64,
     pub results_ttft_s_stddev: f64,
+
+    pub results_ttfo_s_quantiles_p25: Option<f64>,
+    pub results_ttfo_s_quantiles_p50: Option<f64>,
+    pub results_ttfo_s_quantiles_p75: Option<f64>,
+    pub results_ttfo_s_quantiles_p90: Option<f64>,
+    pub results_ttfo_s_quantiles_p95: Option<f64>,
+    pub results_ttfo_s_quantiles_p99: Option<f64>,
+    pub results_ttfo_s_mean: Option<f64>,
+    pub results_ttfo_s_min: Option<f64>,
+    pub results_ttfo_s_max: Option<f64>,
+    pub results_ttfo_s_stddev: Option<f64>,
 
     pub results_end_to_end_latency_s_quantiles_p25: f64,
     pub results_end_to_end_latency_s_quantiles_p50: f64,
@@ -123,6 +141,17 @@ pub struct BenchmarkSummary {
     pub results_number_output_tokens_max: String,
     pub results_number_output_tokens_stddev: f64,
 
+    pub results_number_reasoning_tokens_quantiles_p25: f64,
+    pub results_number_reasoning_tokens_quantiles_p50: f64,
+    pub results_number_reasoning_tokens_quantiles_p75: f64,
+    pub results_number_reasoning_tokens_quantiles_p90: f64,
+    pub results_number_reasoning_tokens_quantiles_p95: f64,
+    pub results_number_reasoning_tokens_quantiles_p99: f64,
+    pub results_number_reasoning_tokens_mean: f64,
+    pub results_number_reasoning_tokens_min: String,
+    pub results_number_reasoning_tokens_max: String,
+    pub results_number_reasoning_tokens_stddev: f64,
+
     pub results_num_requests_started: usize,
     pub results_error_rate: f64,
     pub results_number_errors: usize,
@@ -148,6 +177,7 @@ pub fn print_summary_to_stdout(
     successful_results: &[BenchmarkResult],
     num_errors: usize,
     total_output_tokens: u64,
+    total_reasoning_tokens: u64,
     start_time: std::time::Instant,
     end_time: std::time::Instant,
 ) {
@@ -155,26 +185,34 @@ pub fn print_summary_to_stdout(
 
     let mut inter_token_vec = Vec::new();
     let mut ttft_vec = Vec::new();
+    let mut ttfo_vec = Vec::new();
     let mut e2e_vec = Vec::new();
     let mut throughput_vec = Vec::new();
     let mut in_tokens_vec = Vec::new();
     let mut out_tokens_vec = Vec::new();
+    let mut reasoning_tokens_vec = Vec::new();
 
     for br in successful_results {
         inter_token_vec.push(br.inter_token_latency_s);
         ttft_vec.push(br.ttft.as_secs_f64());
+        if let Some(ttfo) = br.ttfo {
+            ttfo_vec.push(ttfo.as_secs_f64());
+        }
         e2e_vec.push(br.total_latency.as_secs_f64());
         throughput_vec.push(br.throughput);
         in_tokens_vec.push(br.input_tokens as f64);
         out_tokens_vec.push(br.output_tokens as f64);
+        reasoning_tokens_vec.push(br.reasoning_tokens as f64);
     }
 
     let inter_stats = compute_stats_for_flatten(&inter_token_vec);
     let ttft_stats = compute_stats_for_flatten(&ttft_vec);
+    let ttfo_stats = compute_stats_for_flatten(&ttfo_vec);
     let e2e_stats = compute_stats_for_flatten(&e2e_vec);
     let thr_stats = compute_stats_for_flatten(&throughput_vec);
     let in_stats = compute_stats_for_flatten(&in_tokens_vec);
     let out_stats = compute_stats_for_flatten(&out_tokens_vec);
+    let reasoning_stats = compute_stats_for_flatten(&reasoning_tokens_vec);
 
     println!();
 
@@ -185,6 +223,7 @@ pub fn print_summary_to_stdout(
         ("request_output_throughput_token_per_s", &thr_stats, false),
         ("number_input_tokens", &in_stats, true),
         ("number_output_tokens", &out_stats, true),
+        ("number_reasoning_tokens", &reasoning_stats, true),
     ];
 
     for (name, stats, format_as_int) in &stats_to_print {
@@ -206,10 +245,25 @@ pub fn print_summary_to_stdout(
         println!("    stddev = {}", stats.stddev);
     }
 
+    if !ttfo_vec.is_empty() {
+        println!("ttfo_s (time to first output token)");
+        println!("    p25 = {}", ttfo_stats.quantiles.p25);
+        println!("    p50 = {}", ttfo_stats.quantiles.p50);
+        println!("    p75 = {}", ttfo_stats.quantiles.p75);
+        println!("    p90 = {}", ttfo_stats.quantiles.p90);
+        println!("    p95 = {}", ttfo_stats.quantiles.p95);
+        println!("    p99 = {}", ttfo_stats.quantiles.p99);
+        println!("    mean = {}", ttfo_stats.mean);
+        println!("    min = {}", ttfo_stats.min);
+        println!("    max = {}", ttfo_stats.max);
+        println!("    stddev = {}", ttfo_stats.stddev);
+    }
+
     println!("Number Of Errored Requests: {}", num_errors);
 
+    let total_generated_tokens = total_output_tokens + total_reasoning_tokens;
     let overall_output_throughput = if total_time_s > 0.0 {
-        total_output_tokens as f64 / total_time_s
+        total_generated_tokens as f64 / total_time_s
     } else {
         0.0
     };
@@ -243,12 +297,14 @@ pub fn write_results_json(
 
     let mut individual_responses = Vec::with_capacity(all_results.len());
     let mut total_output_tokens = 0_u64;
+    let mut total_reasoning_tokens = 0_u64;
     let mut successful_results = Vec::new();
 
     for result in all_results {
         match result {
             Ok(br) => {
                 total_output_tokens += br.output_tokens as u64;
+                total_reasoning_tokens += br.reasoning_tokens as u64;
 
                 successful_results.push(br.clone());
                 let rec = IndividualResponse {
@@ -256,10 +312,12 @@ pub fn write_results_json(
                     error_msg: "".to_string(),
                     inter_token_latency_s: Some(br.inter_token_latency_s),
                     ttft_s: Some(br.ttft.as_secs_f64()),
+                    ttfo_s: br.ttfo.map(|d| d.as_secs_f64()),
                     end_to_end_latency_s: Some(br.total_latency.as_secs_f64()),
                     request_output_throughput_token_per_s: Some(br.throughput),
                     number_total_tokens: Some(br.total_tokens),
                     number_output_tokens: Some(br.output_tokens),
+                    number_reasoning_tokens: Some(br.reasoning_tokens),
                     number_input_tokens: Some(br.input_tokens),
                 };
                 individual_responses.push(rec);
@@ -270,10 +328,12 @@ pub fn write_results_json(
                     error_msg: msg.clone(),
                     inter_token_latency_s: None,
                     ttft_s: None,
+                    ttfo_s: None,
                     end_to_end_latency_s: None,
                     request_output_throughput_token_per_s: None,
                     number_total_tokens: None,
                     number_output_tokens: None,
+                    number_reasoning_tokens: None,
                     number_input_tokens: None,
                 };
                 individual_responses.push(rec);
@@ -282,11 +342,15 @@ pub fn write_results_json(
     }
 
     {
+        let output_tokens_str = config
+            .mean_output_tokens
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "none".to_string());
         let file_name = format!(
             "{}_{}_{}_individual_responses.json",
             sanitize_filename::sanitize(config.model.replace(['/', '.'], "-")),
             config.mean_input_tokens,
-            config.mean_output_tokens
+            output_tokens_str
         );
 
         let path = Path::new(results_dir).join(file_name);
@@ -296,11 +360,15 @@ pub fn write_results_json(
     }
 
     {
+        let output_tokens_str = config
+            .mean_output_tokens
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "none".to_string());
         let summary_filename = format!(
             "{}_{}_{}_summary.json",
             sanitize_filename::sanitize(config.model.replace(['/', '.'], "-")),
             config.mean_input_tokens,
-            config.mean_output_tokens
+            output_tokens_str
         );
         let summary_path = Path::new(results_dir).join(summary_filename);
 
@@ -310,6 +378,7 @@ pub fn write_results_json(
             all_results.len(),
             all_results.iter().filter(|r| r.is_err()).count(),
             total_output_tokens,
+            total_reasoning_tokens,
             total_start_time,
             total_end_time,
         );
@@ -322,12 +391,14 @@ pub fn write_results_json(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_flattened_summary(
     config: &BenchmarkConfig,
     successful_results: &[BenchmarkResult],
     num_requests_started: usize,
     num_errors: usize,
     total_output_tokens: u64,
+    total_reasoning_tokens: u64,
     start_time: std::time::Instant,
     end_time: std::time::Instant,
 ) -> BenchmarkSummary {
@@ -337,26 +408,34 @@ fn build_flattened_summary(
 
     let mut inter_token_vec = Vec::new();
     let mut ttft_vec = Vec::new();
+    let mut ttfo_vec = Vec::new();
     let mut e2e_vec = Vec::new();
     let mut throughput_vec = Vec::new();
     let mut in_tokens_vec = Vec::new();
     let mut out_tokens_vec = Vec::new();
+    let mut reasoning_tokens_vec = Vec::new();
 
     for br in successful_results {
         inter_token_vec.push(br.inter_token_latency_s);
         ttft_vec.push(br.ttft.as_secs_f64());
+        if let Some(ttfo) = br.ttfo {
+            ttfo_vec.push(ttfo.as_secs_f64());
+        }
         e2e_vec.push(br.total_latency.as_secs_f64());
         throughput_vec.push(br.throughput);
         in_tokens_vec.push(br.input_tokens as f64);
         out_tokens_vec.push(br.output_tokens as f64);
+        reasoning_tokens_vec.push(br.reasoning_tokens as f64);
     }
 
     let inter_stats = compute_stats_for_flatten(&inter_token_vec);
     let ttft_stats = compute_stats_for_flatten(&ttft_vec);
+    let ttfo_stats = compute_stats_for_flatten(&ttfo_vec);
     let e2e_stats = compute_stats_for_flatten(&e2e_vec);
     let thr_stats = compute_stats_for_flatten(&throughput_vec);
     let in_stats = compute_stats_for_flatten(&in_tokens_vec);
     let out_stats = compute_stats_for_flatten(&out_tokens_vec);
+    let reasoning_stats = compute_stats_for_flatten(&reasoning_tokens_vec);
 
     let error_rate = if num_requests_started == 0 {
         0.0
@@ -370,8 +449,9 @@ fn build_flattened_summary(
         "{}".to_string()
     };
 
+    let total_generated_tokens = total_output_tokens + total_reasoning_tokens;
     let mean_output_throughput_token_per_s = if total_time_s > 0.0 {
-        total_output_tokens as f64 / total_time_s
+        total_generated_tokens as f64 / total_time_s
     } else {
         0.0
     };
@@ -387,20 +467,55 @@ fn build_flattened_summary(
         .unwrap_or_default()
         .as_secs();
 
+    let (
+        ttfo_p25,
+        ttfo_p50,
+        ttfo_p75,
+        ttfo_p90,
+        ttfo_p95,
+        ttfo_p99,
+        ttfo_mean,
+        ttfo_min,
+        ttfo_max,
+        ttfo_stddev,
+    ) = if ttfo_vec.is_empty() {
+        (None, None, None, None, None, None, None, None, None, None)
+    } else {
+        (
+            Some(ttfo_stats.quantiles.p25),
+            Some(ttfo_stats.quantiles.p50),
+            Some(ttfo_stats.quantiles.p75),
+            Some(ttfo_stats.quantiles.p90),
+            Some(ttfo_stats.quantiles.p95),
+            Some(ttfo_stats.quantiles.p99),
+            Some(ttfo_stats.mean),
+            Some(ttfo_stats.min),
+            Some(ttfo_stats.max),
+            Some(ttfo_stats.stddev),
+        )
+    };
+
+    let output_tokens_str = config
+        .mean_output_tokens
+        .map(|v| v.to_string())
+        .unwrap_or_else(|| "none".to_string());
+
     BenchmarkSummary {
         version: "2025-10-05".to_string(),
         name: format!(
             "{}_{}_{}_summary",
             sanitize_filename::sanitize(config.model.replace(['/', '.'], "-")),
             config.mean_input_tokens,
-            config.mean_output_tokens
+            output_tokens_str
         ),
         model: config.model.to_string(),
         tokenizer: config.tokenizer.to_string(),
         mean_input_tokens: config.mean_input_tokens,
         stddev_input_tokens: config.stddev_input_tokens,
         mean_output_tokens: config.mean_output_tokens,
-        stddev_output_tokens: config.stddev_output_tokens,
+        stddev_output_tokens: config
+            .mean_output_tokens
+            .map(|_| config.stddev_output_tokens),
         num_concurrent_requests: config.num_concurrent_requests,
 
         results_inter_token_latency_s_quantiles_p25: inter_stats.quantiles.p25,
@@ -424,6 +539,17 @@ fn build_flattened_summary(
         results_ttft_s_min: ttft_stats.min,
         results_ttft_s_max: ttft_stats.max,
         results_ttft_s_stddev: ttft_stats.stddev,
+
+        results_ttfo_s_quantiles_p25: ttfo_p25,
+        results_ttfo_s_quantiles_p50: ttfo_p50,
+        results_ttfo_s_quantiles_p75: ttfo_p75,
+        results_ttfo_s_quantiles_p90: ttfo_p90,
+        results_ttfo_s_quantiles_p95: ttfo_p95,
+        results_ttfo_s_quantiles_p99: ttfo_p99,
+        results_ttfo_s_mean: ttfo_mean,
+        results_ttfo_s_min: ttfo_min,
+        results_ttfo_s_max: ttfo_max,
+        results_ttfo_s_stddev: ttfo_stddev,
 
         results_end_to_end_latency_s_quantiles_p25: e2e_stats.quantiles.p25,
         results_end_to_end_latency_s_quantiles_p50: e2e_stats.quantiles.p50,
@@ -468,6 +594,17 @@ fn build_flattened_summary(
         results_number_output_tokens_min: format!("{}", out_stats.min as u32),
         results_number_output_tokens_max: format!("{}", out_stats.max as u32),
         results_number_output_tokens_stddev: out_stats.stddev,
+
+        results_number_reasoning_tokens_quantiles_p25: reasoning_stats.quantiles.p25,
+        results_number_reasoning_tokens_quantiles_p50: reasoning_stats.quantiles.p50,
+        results_number_reasoning_tokens_quantiles_p75: reasoning_stats.quantiles.p75,
+        results_number_reasoning_tokens_quantiles_p90: reasoning_stats.quantiles.p90,
+        results_number_reasoning_tokens_quantiles_p95: reasoning_stats.quantiles.p95,
+        results_number_reasoning_tokens_quantiles_p99: reasoning_stats.quantiles.p99,
+        results_number_reasoning_tokens_mean: reasoning_stats.mean,
+        results_number_reasoning_tokens_min: format!("{}", reasoning_stats.min as u32),
+        results_number_reasoning_tokens_max: format!("{}", reasoning_stats.max as u32),
+        results_number_reasoning_tokens_stddev: reasoning_stats.stddev,
 
         results_num_requests_started: num_requests_started,
         results_error_rate: error_rate,
