@@ -11,7 +11,7 @@ use std::pin::Pin;
 #[derive(Debug, Deserialize)]
 pub struct StreamDelta {
     pub content: Option<String>,
-    pub reasoning_content: Option<String>, // deprecated in vLLM v0.11.1
+    pub reasoning_content: Option<String>,
     pub reasoning: Option<String>,
 }
 
