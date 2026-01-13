@@ -42,7 +42,7 @@ pub async fn create_chat_completion_stream(
             .into()]);
 
     if let Some(tokens) = max_tokens {
-        builder.max_tokens(tokens);
+        builder.max_completion_tokens(tokens);
     }
 
     let request = builder.build().context("Failed to build request")?;
