@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Performance
+
+- Faster prompt generation via tokenize-once caching. ([#23](https://github.com/jpreagan/llmnop/pull/23))
+
+### Enhancements
+
+- Precise token targeting (token-level sampling replaces line-level). ([#23](https://github.com/jpreagan/llmnop/pull/23))
+- Per-request `max_tokens` sampling when `--mean-output-tokens` is specified. ([#23](https://github.com/jpreagan/llmnop/pull/23))
+- Expanded Shakespeare corpus supports larger input token requests. ([#23](https://github.com/jpreagan/llmnop/pull/23))
+- Updated defaults: `--stddev-input-tokens` and `--stddev-output-tokens` now 0, `--max-num-completed-requests` now 10. ([#23](https://github.com/jpreagan/llmnop/pull/23))
+
 ## 0.4.0
 
 Released on 2026-01-04
