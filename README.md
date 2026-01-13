@@ -3,10 +3,10 @@
 </p>
 
 <p align="center">
-  <a href="#installation">Installation</a> | <a href="#usage">Usage</a>
+  <a href="#installation">Installation</a> | <a href="#quick-start">Quick Start</a> | <a href="#what-it-measures">Metrics</a> | <a href="#examples">Examples</a>
 </p>
 
-`llmnop` benchmarks LLM inference endpoints. Point it at any OpenAI-compatible API and get time-to-first-token, inter-token latency, throughput, and end-to-end latency stats.
+`llmnop` benchmarks LLM inference endpoints. Point it at any OpenAI-compatible API and measure TTFT, inter-token latency, throughput, and end-to-end latency.
 
 ## Installation
 
@@ -18,67 +18,94 @@ brew install jpreagan/tap/llmnop
 curl -sSfL https://github.com/jpreagan/llmnop/releases/latest/download/llmnop-installer.sh | sh
 ```
 
-The installer places `llmnop` in `~/.local/bin`. Make sure that's on your `PATH`.
+The shell installer places `llmnop` in `~/.local/bin`. Make sure that's on your `PATH`.
 
-## Usage
+## Quick Start
 
 ```bash
 export OPENAI_API_BASE=http://localhost:8000/v1
 export OPENAI_API_KEY=your-key
 
-llmnop --model deepseek-ai/DeepSeek-R1-Distill-Qwen-7B
+llmnop --model Qwen/Qwen3-4B-Instruct-2507 --mean-output-tokens 150
 ```
 
-That's it. By default, llmnop sends two requests with ~550 input tokens each and lets the model generate freely. Results print to stdout and save to `result_outputs/`.
+Results print to stdout and save to `result_outputs/`.
+
+## What It Measures
+
+| Metric              | Description                                                   |
+| ------------------- | ------------------------------------------------------------- |
+| TTFT                | Time to first token (content or reasoning)                    |
+| TTFO                | Time to first output token (content only, excludes reasoning) |
+| Inter-token latency | Average time between tokens after the first                   |
+| Throughput          | Tokens per second during generation                           |
+| End-to-end latency  | Total time from request to completion                         |
+
+TTFO is useful for reasoning models (like DeepSeek-R1) where you want to measure time to actual output, not thinking tokens.
+
+## Configuration
+
+### Environment Variables
+
+| Variable          | Required | Description                                 |
+| ----------------- | -------- | ------------------------------------------- |
+| `OPENAI_API_BASE` | Yes      | Base URL (e.g., `http://localhost:8000/v1`) |
+| `OPENAI_API_KEY`  | Yes      | API key                                     |
 
 ### Options
 
 ```
 -m, --model <MODEL>                   Model name (required)
     --tokenizer <TOKENIZER>           Hugging Face tokenizer (defaults to model name)
-    --max-num-completed-requests <N>  Number of requests [default: 2]
+    --max-num-completed-requests <N>  Number of requests [default: 10]
     --num-concurrent-requests <N>     Parallel requests [default: 1]
     --mean-input-tokens <N>           Target input length [default: 550]
-    --stddev-input-tokens <N>         Input length variance [default: 150]
+    --stddev-input-tokens <N>         Input length variance [default: 0]
     --mean-output-tokens <N>          Target output length [default: none]
-    --stddev-output-tokens <N>        Output length variance [default: 10]
+    --stddev-output-tokens <N>        Output length variance [default: 0]
     --results-dir <DIR>               Output directory [default: result_outputs]
     --timeout <SECONDS>               Request timeout [default: 600]
     --no-progress                     Hide progress bar
 ```
 
-### Examples
+## Examples
 
-Run with concurrent requests:
-
-```bash
-llmnop --model deepseek-ai/DeepSeek-R1-Distill-Qwen-7B --num-concurrent-requests 10 --max-num-completed-requests 100
-```
-
-Constrain output length (for reproducible results):
+Concurrent load testing:
 
 ```bash
-llmnop --model deepseek-ai/DeepSeek-R1-Distill-Qwen-7B --mean-output-tokens 150
+llmnop --model Qwen/Qwen3-4B-Instruct-2507 \
+  --num-concurrent-requests 10 \
+  --max-num-completed-requests 100
 ```
 
-Specify a tokenizer when the served model name doesn't match Hugging Face:
+Cap output length for controlled benchmarks:
+
+```bash
+llmnop --model Qwen/Qwen3-4B-Instruct-2507 --mean-output-tokens 150
+```
+
+Custom tokenizer when model name doesn't match Hugging Face:
 
 ```bash
 llmnop --model gpt-oss:20b --tokenizer openai/gpt-oss-20b
 ```
 
-In some cases, you may want to use a neutral tokenizer when comparing different models:
+Neutral tokenizer for cross-model comparisons:
 
 ```bash
 llmnop --model gpt-oss:20b --tokenizer hf-internal-testing/llama-tokenizer
 ```
 
-### Output
+## Output
 
-llmnop prints stats to stdout and writes two JSON files per run:
+Each run produces two JSON files in `result_outputs/`:
 
-- `{model}_{input}_{output}_summary.json` - aggregated stats with percentiles
-- `{model}_{input}_{output}_individual_responses.json` - per-request data
+| File                                                 | Contents                          |
+| ---------------------------------------------------- | --------------------------------- |
+| `{model}_{input}_{output}_summary.json`              | Aggregated stats with percentiles |
+| `{model}_{input}_{output}_individual_responses.json` | Per-request timing data           |
+
+`{input}` and `{output}` are the mean token counts used for the run.
 
 ## License
 
