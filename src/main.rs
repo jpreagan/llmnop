@@ -3,7 +3,6 @@ mod benchmark;
 mod client;
 mod output;
 mod prompt;
-mod sonnet;
 mod tokens;
 
 use anyhow::{Context, Result};
@@ -14,6 +13,8 @@ use clap::Parser;
 use futures::{StreamExt, stream::FuturesUnordered};
 use indicatif::{ProgressBar, ProgressStyle};
 use prompt::{PromptConfig, generate_prompt};
+use rand::prelude::*;
+use rand_distr::Normal;
 use std::env;
 use std::io::{self, IsTerminal};
 use std::sync::Arc;
@@ -21,6 +22,22 @@ use std::time::{Duration, Instant};
 use tokio::time;
 
 use output::{BenchmarkConfig, print_summary_to_stdout, write_results_json};
+
+fn sample_max_tokens(mean: u32, stddev: u32) -> u32 {
+    if stddev == 0 {
+        return mean.max(1);
+    }
+
+    let dist = Normal::new(mean as f64, stddev as f64).unwrap();
+    let mut rng = rand::rng();
+
+    loop {
+        let sample = dist.sample(&mut rng);
+        if sample >= 1.0 {
+            return sample.ceil() as u32;
+        }
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -94,7 +111,9 @@ async fn main() -> Result<()> {
         let prompt_clone = prompt.clone();
         let client_clone = client.clone();
         let tokenizer_clone = tokenizer.clone();
-        let max_tokens = args.mean_output_tokens;
+        let max_tokens = args
+            .mean_output_tokens
+            .map(|mean| sample_max_tokens(mean, args.stddev_output_tokens));
 
         in_flight.push(tokio::spawn(spawn_benchmark(
             client_clone,
@@ -136,7 +155,9 @@ async fn main() -> Result<()> {
                     let prompt_clone = prompt.clone();
                     let client_clone = client.clone();
                     let tokenizer_clone = tokenizer.clone();
-                    let max_tokens = args.mean_output_tokens;
+                    let max_tokens = args
+                        .mean_output_tokens
+                        .map(|mean| sample_max_tokens(mean, args.stddev_output_tokens));
 
                     in_flight.push(tokio::spawn(spawn_benchmark(
                         client_clone,
