@@ -5,7 +5,7 @@ mod output;
 mod prompt;
 mod tokens;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use args::Args;
 use async_openai::{Client, config::OpenAIConfig};
 use benchmark::run_benchmark;
@@ -15,7 +15,6 @@ use indicatif::{ProgressBar, ProgressStyle};
 use prompt::{PromptConfig, generate_prompt};
 use rand::prelude::*;
 use rand_distr::Normal;
-use std::env;
 use std::io::{self, IsTerminal};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -43,15 +42,13 @@ fn sample_max_tokens(mean: u32, stddev: u32) -> u32 {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    let api_key = env::var("OPENAI_API_KEY").context("OPENAI_API_KEY not set")?;
-    let api_base = env::var("OPENAI_API_BASE").context("OPENAI_API_BASE not set")?;
-
     let openai_config = OpenAIConfig::new()
-        .with_api_key(api_key)
-        .with_api_base(api_base);
+        .with_api_key(args.api_key.clone())
+        .with_api_base(args.url.clone());
     let client = Arc::new(Client::with_config(openai_config));
 
     let tokenizer = args.tokenizer.clone().unwrap_or_else(|| args.model.clone());
+    let api = args.api;
 
     let overall_start = Instant::now();
 
@@ -96,11 +93,12 @@ async fn main() -> Result<()> {
     tokio::pin!(timeout_future);
 
     let spawn_benchmark = async move |client: Arc<Client<OpenAIConfig>>,
+                                      api_type,
                                       model: String,
                                       prompt: String,
                                       max_tokens: Option<u32>,
                                       tokenizer: String| {
-        run_benchmark(&client, &model, &prompt, max_tokens, &tokenizer).await
+        run_benchmark(&client, api_type, &model, &prompt, max_tokens, &tokenizer).await
     };
 
     while next_request_index < args.max_num_completed_requests
@@ -117,6 +115,7 @@ async fn main() -> Result<()> {
 
         in_flight.push(tokio::spawn(spawn_benchmark(
             client_clone,
+            api,
             model_name,
             prompt_clone,
             max_tokens,
@@ -161,6 +160,7 @@ async fn main() -> Result<()> {
 
                     in_flight.push(tokio::spawn(spawn_benchmark(
                         client_clone,
+                        api,
                         model_name,
                         prompt_clone,
                         max_tokens,

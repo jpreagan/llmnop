@@ -14,7 +14,7 @@ exclude = ["assets/*"]
 
 [dependencies]
 anyhow = "1.0.97"
-async-openai = { version = "0.32.2", features = ["byot", "chat-completion"] }
+async-openai = { version = "0.32.2", features = ["byot", "chat-completion", "responses"] }
 clap = { version = "4.5.34", features = ["derive"] }
 futures = "0.3.31"
 indicatif = "0.18.0"

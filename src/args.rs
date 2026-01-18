@@ -1,8 +1,23 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum};
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum ApiType {
+    Chat,
+    Responses,
+}
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 pub struct Args {
+    #[arg(long, value_enum, default_value = "chat", help = "API type")]
+    pub api: ApiType,
+
+    #[arg(long, help = "Base URL (e.g., http://localhost:8000/v1)")]
+    pub url: String,
+
+    #[arg(long, help = "API key")]
+    pub api_key: String,
+
     #[arg(short, long, help = "Model name")]
     pub model: String,
 
@@ -35,4 +50,56 @@ pub struct Args {
 
     #[arg(long, help = "Hide progress bar")]
     pub no_progress: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn test_default_api_type_is_chat() {
+        let args = Args::try_parse_from([
+            "llmnop",
+            "--model",
+            "test-model",
+            "--url",
+            "http://localhost:8000/v1",
+            "--api-key",
+            "test-key",
+        ])
+        .expect("parse args");
+
+        assert!(matches!(args.api, ApiType::Chat));
+    }
+
+    #[test]
+    fn test_parse_responses_api_type() {
+        let args = Args::try_parse_from([
+            "llmnop",
+            "--api",
+            "responses",
+            "--model",
+            "test-model",
+            "--url",
+            "http://localhost:8000/v1",
+            "--api-key",
+            "test-key",
+        ])
+        .expect("parse args");
+
+        assert!(matches!(args.api, ApiType::Responses));
+    }
+
+    #[test]
+    fn test_missing_url_is_error() {
+        let result = Args::try_parse_from(["llmnop", "--model", "test-model", "--api-key", "key"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_missing_api_key_is_error() {
+        let result = Args::try_parse_from(["llmnop", "--model", "test-model", "--url", "http://x"]);
+        assert!(result.is_err());
+    }
 }
