@@ -8,12 +8,18 @@ CLI tool for benchmarking LLM inference endpoints (OpenAI API compatible). Measu
 - `--url` - Required base URL (e.g., `http://localhost:8000/v1`)
 - `--api-key` - Required API key
 
+Use `--help` to show complete CLI usage and flags.
+
 ## Key Metrics
 
 - **TTFT** - Time to first token (content or reasoning)
 - **TTFO** - Time to first output token (content only, excludes reasoning)
 - **Inter-token latency** - Average gap between token arrivals (excludes TTFT)
 - **Throughput** - Tokens/second over generation window (first to last token)
+
+## Output Version
+
+- Bump `BenchmarkSummary.version` in `src/output.rs` whenever output fields or semantics change.
 
 ## Code Style
 
