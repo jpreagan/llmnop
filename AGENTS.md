@@ -2,22 +2,11 @@
 
 CLI tool for benchmarking LLM inference endpoints (OpenAI API compatible). Measures TTFT, inter-token latency, throughput, and end-to-end latency.
 
-## Build
+## Required CLI Flags
 
-```bash
-cargo build                # Debug build
-cargo build --release      # Release build
-cargo test                 # Run tests
-cargo clippy               # Lint
-cargo fmt                  # Format
-```
-
-Requires Rust 1.85+ (edition 2024).
-
-## Environment Variables
-
-- `OPENAI_API_KEY` - Required API key
-- `OPENAI_API_BASE` - Required base URL (e.g., `http://localhost:8000/v1`)
+- `--model` - Required model name
+- `--url` - Required base URL (e.g., `http://localhost:8000/v1`)
+- `--api-key` - Required API key
 
 ## Key Metrics
 
@@ -45,4 +34,3 @@ Requires Rust 1.85+ (edition 2024).
 ## Changelog
 
 User-facing changes only. Categories: Enhancements, Bug fixes, Documentation, Configuration, Performance.
-

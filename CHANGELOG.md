@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Enhancements
+
+- Add Responses API support with `--api` plus CLI-configured `--url` and `--api-key`. (#27)
+
 ## 0.5.0
 
 Released on 2026-01-13

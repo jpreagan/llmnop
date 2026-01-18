@@ -23,10 +23,10 @@ The shell installer places `llmnop` in `~/.local/bin`. Make sure that's on your 
 ## Quick Start
 
 ```bash
-export OPENAI_API_BASE=http://localhost:8000/v1
-export OPENAI_API_KEY=your-key
-
-llmnop --model Qwen/Qwen3-4B-Instruct-2507 --mean-output-tokens 150
+llmnop --url http://localhost:8000/v1 \
+  --api-key token-abc123 \
+  --model Qwen/Qwen3-4B-Instruct-2507 \
+  --mean-output-tokens 150
 ```
 
 Results print to stdout and save to `result_outputs/`.
@@ -45,16 +45,19 @@ TTFO is useful for reasoning models (like DeepSeek-R1) where you want to measure
 
 ## Configuration
 
-### Environment Variables
+### Required Flags
 
-| Variable          | Required | Description                                 |
-| ----------------- | -------- | ------------------------------------------- |
-| `OPENAI_API_BASE` | Yes      | Base URL (e.g., `http://localhost:8000/v1`) |
-| `OPENAI_API_KEY`  | Yes      | API key                                     |
+| Flag        | Description                                 |
+| ----------- | ------------------------------------------- |
+| `--url`     | Base URL (e.g., `http://localhost:8000/v1`) |
+| `--api-key` | API key                                     |
 
 ### Options
 
 ```
+-    --api <API>                      API type [default: chat] [possible values: chat, responses]
+    --url <URL>                       Base URL (e.g., http://localhost:8000/v1)
+    --api-key <API_KEY>               API key
 -m, --model <MODEL>                   Model name (required)
     --tokenizer <TOKENIZER>           Hugging Face tokenizer (defaults to model name)
     --max-num-completed-requests <N>  Number of requests [default: 10]
@@ -73,7 +76,8 @@ TTFO is useful for reasoning models (like DeepSeek-R1) where you want to measure
 Concurrent load testing:
 
 ```bash
-llmnop --model Qwen/Qwen3-4B-Instruct-2507 \
+llmnop --url http://localhost:8000/v1 --api-key token-abc123 \
+  --model Qwen/Qwen3-4B-Instruct-2507 \
   --num-concurrent-requests 10 \
   --max-num-completed-requests 100
 ```
@@ -81,19 +85,32 @@ llmnop --model Qwen/Qwen3-4B-Instruct-2507 \
 Cap output length for controlled benchmarks:
 
 ```bash
-llmnop --model Qwen/Qwen3-4B-Instruct-2507 --mean-output-tokens 150
+llmnop --url http://localhost:8000/v1 --api-key token-abc123 \
+  --model Qwen/Qwen3-4B-Instruct-2507 \
+  --mean-output-tokens 150
+```
+
+Responses API:
+
+```bash
+llmnop --api responses --url http://localhost:8000/v1 --api-key token-abc123 \
+  --model Qwen/Qwen3-4B-Instruct-2507
 ```
 
 Custom tokenizer when model name doesn't match Hugging Face:
 
 ```bash
-llmnop --model gpt-oss:20b --tokenizer openai/gpt-oss-20b
+llmnop --url http://localhost:8000/v1 --api-key token-abc123 \
+  --model gpt-oss:20b \
+  --tokenizer openai/gpt-oss-20b
 ```
 
 Neutral tokenizer for cross-model comparisons:
 
 ```bash
-llmnop --model gpt-oss:20b --tokenizer hf-internal-testing/llama-tokenizer
+llmnop --url http://localhost:8000/v1 --api-key token-abc123 \
+  --model gpt-oss:20b \
+  --tokenizer hf-internal-testing/llama-tokenizer
 ```
 
 ## Output

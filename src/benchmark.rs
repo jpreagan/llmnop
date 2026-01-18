@@ -1,4 +1,5 @@
-use crate::client::create_chat_completion_stream;
+use crate::args::ApiType;
+use crate::client::{ResponsesStreamEvent, create_chat_completion_stream, create_responses_stream};
 use crate::tokens;
 use anyhow::Result;
 use async_openai::{Client, config::OpenAIConfig};
@@ -27,6 +28,22 @@ struct TokenCounts {
 }
 
 pub async fn run_benchmark(
+    client: &Client<OpenAIConfig>,
+    api: ApiType,
+    model: &str,
+    prompt: &str,
+    max_tokens: Option<u32>,
+    tokenizer: &str,
+) -> Result<BenchmarkResult> {
+    match api {
+        ApiType::Chat => run_chat_benchmark(client, model, prompt, max_tokens, tokenizer).await,
+        ApiType::Responses => {
+            run_responses_benchmark(client, model, prompt, max_tokens, tokenizer).await
+        }
+    }
+}
+
+async fn run_chat_benchmark(
     client: &Client<OpenAIConfig>,
     model: &str,
     prompt: &str,
@@ -67,20 +84,7 @@ pub async fn run_benchmark(
 
     let end_time = Instant::now();
 
-    let input_tokens = tokens::count_tokens(prompt, tokenizer)?;
-    let output_tokens = tokens::count_tokens(&generated_text, tokenizer)?;
-    let reasoning_tokens = if reasoning_text.is_empty() {
-        0
-    } else {
-        tokens::count_tokens(&reasoning_text, tokenizer)?
-    };
-
-    let token_counts = TokenCounts {
-        input: input_tokens,
-        output: output_tokens,
-        reasoning: reasoning_tokens,
-        total: input_tokens + output_tokens + reasoning_tokens,
-    };
+    let token_counts = compute_token_counts(prompt, &generated_text, &reasoning_text, tokenizer)?;
 
     Ok(process_benchmark_data(
         start_time,
@@ -89,6 +93,84 @@ pub async fn run_benchmark(
         &reasoning_arrivals,
         &token_counts,
     ))
+}
+
+async fn run_responses_benchmark(
+    client: &Client<OpenAIConfig>,
+    model: &str,
+    prompt: &str,
+    max_tokens: Option<u32>,
+    tokenizer: &str,
+) -> Result<BenchmarkResult> {
+    let start_time = Instant::now();
+    let mut content_arrivals: Vec<(Instant, String)> = Vec::new();
+    let mut reasoning_arrivals: Vec<(Instant, String)> = Vec::new();
+    let mut generated_text = String::new();
+    let mut reasoning_text = String::new();
+
+    let mut stream = create_responses_stream(client, model, prompt, max_tokens).await?;
+    while let Some(event_result) = stream.next().await {
+        let event = event_result?;
+        let now = Instant::now();
+
+        match event {
+            ResponsesStreamEvent::OutputTextDelta { delta: Some(text) } => {
+                if !text.is_empty() {
+                    content_arrivals.push((now, text.clone()));
+                    generated_text.push_str(&text);
+                }
+            }
+            ResponsesStreamEvent::ReasoningTextDelta { delta: Some(text) }
+            | ResponsesStreamEvent::ReasoningDelta { delta: Some(text) } => {
+                if !text.is_empty() {
+                    reasoning_arrivals.push((now, text.clone()));
+                    reasoning_text.push_str(&text);
+                }
+            }
+            ResponsesStreamEvent::Error { error } => {
+                let message = error
+                    .get("message")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("unknown Responses API error");
+                return Err(anyhow::anyhow!("Responses API error: {}", message));
+            }
+            _ => {}
+        }
+    }
+
+    let end_time = Instant::now();
+
+    let token_counts = compute_token_counts(prompt, &generated_text, &reasoning_text, tokenizer)?;
+
+    Ok(process_benchmark_data(
+        start_time,
+        end_time,
+        &content_arrivals,
+        &reasoning_arrivals,
+        &token_counts,
+    ))
+}
+
+fn compute_token_counts(
+    prompt: &str,
+    generated_text: &str,
+    reasoning_text: &str,
+    tokenizer: &str,
+) -> Result<TokenCounts> {
+    let input_tokens = tokens::count_tokens(prompt, tokenizer)?;
+    let output_tokens = tokens::count_tokens(generated_text, tokenizer)?;
+    let reasoning_tokens = if reasoning_text.is_empty() {
+        0
+    } else {
+        tokens::count_tokens(reasoning_text, tokenizer)?
+    };
+
+    Ok(TokenCounts {
+        input: input_tokens,
+        output: output_tokens,
+        reasoning: reasoning_tokens,
+        total: input_tokens + output_tokens + reasoning_tokens,
+    })
 }
 
 fn process_benchmark_data(
