@@ -60,6 +60,7 @@ TTFO is useful for reasoning models (like DeepSeek-R1) where you want to measure
     --api-key <API_KEY>               API key
 -m, --model <MODEL>                   Model name (required)
     --tokenizer <TOKENIZER>           Hugging Face tokenizer (defaults to model name)
+    --use-server-token-count          Use server-reported token usage for metrics
     --max-num-completed-requests <N>  Number of requests [default: 10]
     --num-concurrent-requests <N>     Parallel requests [default: 1]
     --mean-input-tokens <N>           Target input length [default: 550]
@@ -70,6 +71,9 @@ TTFO is useful for reasoning models (like DeepSeek-R1) where you want to measure
     --timeout <SECONDS>               Request timeout [default: 600]
     --no-progress                     Hide progress bar
 ```
+
+When `--use-server-token-count` is enabled, llmnop uses server-reported token counts for metrics
+instead of local tokenization. If the server does not return usage, llmnop will error.
 
 ## Examples
 

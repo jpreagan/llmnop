@@ -24,6 +24,9 @@ pub struct Args {
     #[arg(long, help = "Hugging Face tokenizer (defaults to model name)")]
     pub tokenizer: Option<String>,
 
+    #[arg(long, help = "Use server-reported token usage for metrics")]
+    pub use_server_token_count: bool,
+
     #[arg(long, default_value = "10", help = "Number of requests")]
     pub max_num_completed_requests: u32,
 

@@ -6,9 +6,9 @@ mod prompt;
 mod tokens;
 
 use anyhow::Result;
-use args::Args;
+use args::{ApiType, Args};
 use async_openai::{Client, config::OpenAIConfig};
-use benchmark::run_benchmark;
+use benchmark::{BenchmarkRequest, BenchmarkResult, run_benchmark};
 use clap::Parser;
 use futures::{StreamExt, stream::FuturesUnordered};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -38,6 +38,14 @@ fn sample_max_tokens(mean: u32, stddev: u32) -> u32 {
     }
 }
 
+async fn run_benchmark_task(
+    client: Arc<Client<OpenAIConfig>>,
+    api_type: ApiType,
+    request: BenchmarkRequest,
+) -> Result<BenchmarkResult> {
+    run_benchmark(&client, api_type, request).await
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
@@ -49,6 +57,7 @@ async fn main() -> Result<()> {
 
     let tokenizer = args.tokenizer.clone().unwrap_or_else(|| args.model.clone());
     let api = args.api;
+    let use_server_token_count = args.use_server_token_count;
 
     let overall_start = Instant::now();
 
@@ -92,15 +101,6 @@ async fn main() -> Result<()> {
 
     tokio::pin!(timeout_future);
 
-    let spawn_benchmark = async move |client: Arc<Client<OpenAIConfig>>,
-                                      api_type,
-                                      model: String,
-                                      prompt: String,
-                                      max_tokens: Option<u32>,
-                                      tokenizer: String| {
-        run_benchmark(&client, api_type, &model, &prompt, max_tokens, &tokenizer).await
-    };
-
     while next_request_index < args.max_num_completed_requests
         && in_flight.len() < args.num_concurrent_requests as usize
     {
@@ -113,14 +113,15 @@ async fn main() -> Result<()> {
             .mean_output_tokens
             .map(|mean| sample_max_tokens(mean, args.stddev_output_tokens));
 
-        in_flight.push(tokio::spawn(spawn_benchmark(
-            client_clone,
-            api,
-            model_name,
-            prompt_clone,
+        let request = BenchmarkRequest {
+            model: model_name,
+            prompt: prompt_clone,
             max_tokens,
-            tokenizer_clone,
-        )));
+            tokenizer: tokenizer_clone,
+            use_server_token_count,
+        };
+
+        in_flight.push(tokio::spawn(run_benchmark_task(client_clone, api, request)));
         next_request_index += 1;
     }
 
@@ -158,13 +159,18 @@ async fn main() -> Result<()> {
                         .mean_output_tokens
                         .map(|mean| sample_max_tokens(mean, args.stddev_output_tokens));
 
-                    in_flight.push(tokio::spawn(spawn_benchmark(
+                    let request = BenchmarkRequest {
+                        model: model_name,
+                        prompt: prompt_clone,
+                        max_tokens,
+                        tokenizer: tokenizer_clone,
+                        use_server_token_count,
+                    };
+
+                    in_flight.push(tokio::spawn(run_benchmark_task(
                         client_clone,
                         api,
-                        model_name,
-                        prompt_clone,
-                        max_tokens,
-                        tokenizer_clone,
+                        request,
                     )));
                     next_request_index += 1;
                 }

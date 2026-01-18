@@ -5,6 +5,7 @@
 ### Enhancements
 
 - Add Responses API support with `--api` plus CLI-configured `--url` and `--api-key`. (#27)
+- Add `--use-server-token-count` to use API-reported usage for token metrics. (#21)
 
 ## 0.5.0
 

@@ -1,7 +1,10 @@
 use crate::args::ApiType;
-use crate::client::{ResponsesStreamEvent, create_chat_completion_stream, create_responses_stream};
+use crate::client::{
+    ResponsesStreamEvent, ResponsesUsage, create_chat_completion_stream, create_responses_stream,
+};
 use crate::tokens;
-use anyhow::Result;
+use anyhow::{Result, anyhow};
+use async_openai::types::chat::CompletionUsage;
 use async_openai::{Client, config::OpenAIConfig};
 use futures::StreamExt;
 use serde::Serialize;
@@ -20,6 +23,15 @@ pub struct BenchmarkResult {
     pub total_tokens: u32,
 }
 
+#[derive(Debug, Clone)]
+pub struct BenchmarkRequest {
+    pub model: String,
+    pub prompt: String,
+    pub max_tokens: Option<u32>,
+    pub tokenizer: String,
+    pub use_server_token_count: bool,
+}
+
 struct TokenCounts {
     input: u32,
     output: u32,
@@ -30,35 +42,38 @@ struct TokenCounts {
 pub async fn run_benchmark(
     client: &Client<OpenAIConfig>,
     api: ApiType,
-    model: &str,
-    prompt: &str,
-    max_tokens: Option<u32>,
-    tokenizer: &str,
+    request: BenchmarkRequest,
 ) -> Result<BenchmarkResult> {
     match api {
-        ApiType::Chat => run_chat_benchmark(client, model, prompt, max_tokens, tokenizer).await,
-        ApiType::Responses => {
-            run_responses_benchmark(client, model, prompt, max_tokens, tokenizer).await
-        }
+        ApiType::Chat => run_chat_benchmark(client, &request).await,
+        ApiType::Responses => run_responses_benchmark(client, &request).await,
     }
 }
 
 async fn run_chat_benchmark(
     client: &Client<OpenAIConfig>,
-    model: &str,
-    prompt: &str,
-    max_tokens: Option<u32>,
-    tokenizer: &str,
+    request: &BenchmarkRequest,
 ) -> Result<BenchmarkResult> {
     let start_time = Instant::now();
     let mut content_arrivals: Vec<(Instant, String)> = Vec::new();
     let mut reasoning_arrivals: Vec<(Instant, String)> = Vec::new();
     let mut generated_text = String::new();
     let mut reasoning_text = String::new();
+    let mut usage: Option<CompletionUsage> = None;
 
-    let mut stream = create_chat_completion_stream(client, model, prompt, max_tokens).await?;
+    let mut stream = create_chat_completion_stream(
+        client,
+        &request.model,
+        &request.prompt,
+        request.max_tokens,
+        request.use_server_token_count,
+    )
+    .await?;
     while let Some(response_result) = stream.next().await {
         let response = response_result?;
+        if let Some(chunk_usage) = response.usage {
+            usage = Some(chunk_usage);
+        }
         for choice in response.choices {
             let now = Instant::now();
 
@@ -84,7 +99,15 @@ async fn run_chat_benchmark(
 
     let end_time = Instant::now();
 
-    let token_counts = compute_token_counts(prompt, &generated_text, &reasoning_text, tokenizer)?;
+    let usage_counts = usage.as_ref().map(token_counts_from_chat_usage);
+    let token_counts = resolve_token_counts(
+        request.use_server_token_count,
+        usage_counts,
+        &request.prompt,
+        &generated_text,
+        &reasoning_text,
+        &request.tokenizer,
+    )?;
 
     Ok(process_benchmark_data(
         start_time,
@@ -97,18 +120,18 @@ async fn run_chat_benchmark(
 
 async fn run_responses_benchmark(
     client: &Client<OpenAIConfig>,
-    model: &str,
-    prompt: &str,
-    max_tokens: Option<u32>,
-    tokenizer: &str,
+    request: &BenchmarkRequest,
 ) -> Result<BenchmarkResult> {
     let start_time = Instant::now();
     let mut content_arrivals: Vec<(Instant, String)> = Vec::new();
     let mut reasoning_arrivals: Vec<(Instant, String)> = Vec::new();
     let mut generated_text = String::new();
     let mut reasoning_text = String::new();
+    let mut usage: Option<ResponsesUsage> = None;
 
-    let mut stream = create_responses_stream(client, model, prompt, max_tokens).await?;
+    let mut stream =
+        create_responses_stream(client, &request.model, &request.prompt, request.max_tokens)
+            .await?;
     while let Some(event_result) = stream.next().await {
         let event = event_result?;
         let now = Instant::now();
@@ -127,6 +150,9 @@ async fn run_responses_benchmark(
                     reasoning_text.push_str(&text);
                 }
             }
+            ResponsesStreamEvent::ResponseCompleted { response } => {
+                usage = response.and_then(|response| response.usage);
+            }
             ResponsesStreamEvent::Error { error } => {
                 let message = error
                     .get("message")
@@ -140,7 +166,15 @@ async fn run_responses_benchmark(
 
     let end_time = Instant::now();
 
-    let token_counts = compute_token_counts(prompt, &generated_text, &reasoning_text, tokenizer)?;
+    let usage_counts = usage.as_ref().and_then(token_counts_from_responses_usage);
+    let token_counts = resolve_token_counts(
+        request.use_server_token_count,
+        usage_counts,
+        &request.prompt,
+        &generated_text,
+        &reasoning_text,
+        &request.tokenizer,
+    )?;
 
     Ok(process_benchmark_data(
         start_time,
@@ -149,6 +183,56 @@ async fn run_responses_benchmark(
         &reasoning_arrivals,
         &token_counts,
     ))
+}
+
+fn token_counts_from_chat_usage(usage: &CompletionUsage) -> TokenCounts {
+    let reasoning = usage
+        .completion_tokens_details
+        .as_ref()
+        .and_then(|details| details.reasoning_tokens)
+        .unwrap_or(0);
+    let output = usage.completion_tokens.saturating_sub(reasoning);
+
+    TokenCounts {
+        input: usage.prompt_tokens,
+        output,
+        reasoning,
+        total: usage.total_tokens,
+    }
+}
+
+fn token_counts_from_responses_usage(usage: &ResponsesUsage) -> Option<TokenCounts> {
+    let input = usage.input_tokens?;
+    let output_total = usage.output_tokens?;
+    let reasoning = usage
+        .output_tokens_details
+        .as_ref()
+        .and_then(|details| details.reasoning_tokens)
+        .unwrap_or(0);
+    let output = output_total.saturating_sub(reasoning);
+    let total = usage.total_tokens.unwrap_or(input + output_total);
+
+    Some(TokenCounts {
+        input,
+        output,
+        reasoning,
+        total,
+    })
+}
+
+fn resolve_token_counts(
+    use_server_token_count: bool,
+    usage_counts: Option<TokenCounts>,
+    prompt: &str,
+    generated_text: &str,
+    reasoning_text: &str,
+    tokenizer: &str,
+) -> Result<TokenCounts> {
+    if use_server_token_count {
+        usage_counts.ok_or_else(|| anyhow!("server did not return token usage"))
+    } else {
+        compute_token_counts(prompt, generated_text, reasoning_text, tokenizer)
+    }
 }
 
 fn compute_token_counts(
@@ -251,6 +335,8 @@ fn process_benchmark_data(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::client::ResponsesOutputTokensDetails;
+    use async_openai::types::chat::CompletionTokensDetails;
     use std::time::{Duration, Instant};
 
     #[test]
@@ -573,4 +659,43 @@ mod tests {
         // TTFO should also be 100ms
         assert_eq!(result.ttfo, Some(Duration::from_millis(100)));
     }
+
+    #[test]
+    fn test_token_counts_from_chat_usage_with_reasoning() {
+        let usage = CompletionUsage {
+            prompt_tokens: 12,
+            completion_tokens: 8,
+            total_tokens: 20,
+            prompt_tokens_details: None,
+            completion_tokens_details: Some(CompletionTokensDetails {
+                reasoning_tokens: Some(3),
+                ..Default::default()
+            }),
+        };
+
+        let counts = token_counts_from_chat_usage(&usage);
+        assert_eq!(counts.input, 12);
+        assert_eq!(counts.output, 5);
+        assert_eq!(counts.reasoning, 3);
+        assert_eq!(counts.total, 20);
+    }
+
+    #[test]
+    fn test_token_counts_from_responses_usage_with_reasoning() {
+        let usage = ResponsesUsage {
+            input_tokens: Some(9),
+            output_tokens: Some(4),
+            total_tokens: None,
+            output_tokens_details: Some(ResponsesOutputTokensDetails {
+                reasoning_tokens: Some(1),
+            }),
+        };
+
+        let counts = token_counts_from_responses_usage(&usage).expect("counts");
+        assert_eq!(counts.input, 9);
+        assert_eq!(counts.output, 3);
+        assert_eq!(counts.reasoning, 1);
+        assert_eq!(counts.total, 13);
+    }
+
 }

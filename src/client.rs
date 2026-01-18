@@ -2,7 +2,8 @@ use anyhow::{Context, Result, anyhow};
 use async_openai::Client;
 use async_openai::config::OpenAIConfig;
 use async_openai::types::chat::{
-    ChatCompletionRequestUserMessageArgs, CreateChatCompletionRequestArgs,
+    ChatCompletionRequestUserMessageArgs, ChatCompletionStreamOptions, CompletionUsage,
+    CreateChatCompletionRequestArgs,
 };
 use futures::{Stream, StreamExt};
 use serde::Deserialize;
@@ -24,6 +25,7 @@ pub struct StreamChoice {
 #[derive(Debug, Deserialize)]
 pub struct StreamChunk {
     pub choices: Vec<StreamChoice>,
+    pub usage: Option<CompletionUsage>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -44,6 +46,8 @@ pub enum ResponsesStreamEvent {
         #[serde(default, alias = "text")]
         delta: Option<String>,
     },
+    #[serde(rename = "response.completed")]
+    ResponseCompleted { response: Option<ResponseCompleted> },
     #[serde(rename = "error")]
     Error {
         #[serde(default)]
@@ -53,11 +57,31 @@ pub enum ResponsesStreamEvent {
     Other,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ResponseCompleted {
+    pub usage: Option<ResponsesUsage>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct ResponsesUsage {
+    pub input_tokens: Option<u32>,
+    pub output_tokens: Option<u32>,
+    pub total_tokens: Option<u32>,
+    #[serde(default)]
+    pub output_tokens_details: Option<ResponsesOutputTokensDetails>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct ResponsesOutputTokensDetails {
+    pub reasoning_tokens: Option<u32>,
+}
+
 pub async fn create_chat_completion_stream(
     client: &Client<OpenAIConfig>,
     model: &str,
     prompt: &str,
     max_tokens: Option<u32>,
+    include_usage: bool,
 ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamChunk, anyhow::Error>> + Send>>> {
     let mut builder = CreateChatCompletionRequestArgs::default();
     builder
@@ -71,6 +95,13 @@ pub async fn create_chat_completion_stream(
 
     if let Some(tokens) = max_tokens {
         builder.max_completion_tokens(tokens);
+    }
+
+    if include_usage {
+        builder.stream_options(ChatCompletionStreamOptions {
+            include_usage: Some(true),
+            include_obfuscation: None,
+        });
     }
 
     let request = builder.build().context("Failed to build request")?;
@@ -118,6 +149,19 @@ pub async fn create_responses_stream(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_stream_chunk_usage_deserialize() {
+        let chunk: StreamChunk = serde_json::from_str(
+            r#"{"choices":[],"usage":{"prompt_tokens":4,"completion_tokens":6,"total_tokens":10}}"#,
+        )
+        .expect("deserialize chunk");
+
+        let usage = chunk.usage.expect("usage");
+        assert_eq!(usage.prompt_tokens, 4);
+        assert_eq!(usage.completion_tokens, 6);
+        assert_eq!(usage.total_tokens, 10);
+    }
 
     #[test]
     fn test_output_text_delta_deserialize() {
@@ -191,12 +235,25 @@ mod tests {
     }
 
     #[test]
-    fn test_other_event_deserialize() {
-        let event: ResponsesStreamEvent =
-            serde_json::from_str(r#"{"type":"response.completed"}"#).expect("deserialize event");
+    fn test_response_completed_deserialize() {
+        let event: ResponsesStreamEvent = serde_json::from_str(
+            r#"{"type":"response.completed","response":{"usage":{"input_tokens":3,"output_tokens":5,"total_tokens":8,"output_tokens_details":{"reasoning_tokens":2}}}}"#,
+        )
+        .expect("deserialize event");
 
         match event {
-            ResponsesStreamEvent::Other => {}
+            ResponsesStreamEvent::ResponseCompleted { response } => {
+                let usage = response.and_then(|response| response.usage).expect("usage");
+                assert_eq!(usage.input_tokens, Some(3));
+                assert_eq!(usage.output_tokens, Some(5));
+                assert_eq!(usage.total_tokens, Some(8));
+                assert_eq!(
+                    usage
+                        .output_tokens_details
+                        .and_then(|details| details.reasoning_tokens),
+                    Some(2)
+                );
+            }
             _ => panic!("unexpected event variant"),
         }
     }
