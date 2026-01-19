@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Performance
+
+- Reduce startup latency by parallelizing corpus tokenization.
+
 ### Enhancements
 
 - Add Responses API support with `--api` plus CLI-configured `--url` and `--api-key`. ([#27](https://github.com/jpreagan/llmnop/pull/27))
