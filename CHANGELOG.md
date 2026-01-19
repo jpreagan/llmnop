@@ -2,9 +2,13 @@
 
 ## Unreleased
 
+## 0.6.0
+
+Released on 2026-01-18
+
 ### Performance
 
-- Reduce startup latency by parallelizing corpus tokenization.
+- Reduce startup latency by parallelizing corpus tokenization. ([#32](https://github.com/jpreagan/llmnop/pull/32))
 
 ### Enhancements
 
@@ -37,7 +41,7 @@ Released on 2026-01-04
 
 ### Bug fixes
 
-- Compute per-request output throughput over the generation window (first streamed token → last streamed token), rather than full request wall time.
+- Compute per-request output throughput over the generation window (first streamed token → last streamed token), rather than full request wall time. ([#15](https://github.com/jpreagan/llmnop/pull/15))
 
 ## 0.3.1
 
@@ -45,7 +49,7 @@ Released on 2025-10-31
 
 ### Enhancements
 
-- `--no-progress` CLI flag to disable the progress bar for non-interactive environments.
+- `--no-progress` CLI flag to disable the progress bar for non-interactive environments. ([#9](https://github.com/jpreagan/llmnop/pull/9))
 
 ## 0.3.0
 
