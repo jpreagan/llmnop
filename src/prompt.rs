@@ -6,6 +6,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex};
 
 static SHAKESPEARE: &str = include_str!("assets/shakespeare.txt");
+// Fixed-size char chunks keep deterministic boundaries while enabling parallel tokenization.
+const MAX_CHARS_PER_CHUNK: usize = 10_000;
 
 static TOKENIZED_CORPUS_CACHE: LazyLock<Mutex<HashMap<String, Arc<Vec<u32>>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -15,6 +17,35 @@ pub struct PromptConfig {
     pub stddev_input_tokens: u32,
 }
 
+fn build_corpus_chunks() -> Vec<String> {
+    let mut chunks = Vec::new();
+    let mut current_chunk = String::new();
+    let mut char_count = 0usize;
+
+    for line in SHAKESPEARE
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+    {
+        if !current_chunk.is_empty() {
+            current_chunk.push(' ');
+        }
+        current_chunk.push_str(line);
+        char_count += line.chars().count();
+
+        if char_count >= MAX_CHARS_PER_CHUNK {
+            chunks.push(std::mem::take(&mut current_chunk));
+            char_count = 0;
+        }
+    }
+
+    if !current_chunk.is_empty() {
+        chunks.push(current_chunk);
+    }
+
+    chunks
+}
+
 fn get_tokenized_corpus(tokenizer: &str) -> Result<Arc<Vec<u32>>> {
     let mut cache = TOKENIZED_CORPUS_CACHE.lock().unwrap();
 
@@ -22,13 +53,14 @@ fn get_tokenized_corpus(tokenizer: &str) -> Result<Arc<Vec<u32>>> {
         return Ok(Arc::clone(corpus));
     }
 
-    let text: String = SHAKESPEARE
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .collect::<Vec<_>>()
-        .join(" ");
-
-    let token_ids = Arc::new(tokens::encode(&text, tokenizer)?);
+    let chunks = build_corpus_chunks();
+    let encoded_chunks = tokens::encode_batch(&chunks, tokenizer)?;
+    let total_tokens: usize = encoded_chunks.iter().map(|chunk| chunk.len()).sum();
+    let mut token_ids = Vec::with_capacity(total_tokens);
+    for chunk in encoded_chunks {
+        token_ids.extend(chunk);
+    }
+    let token_ids = Arc::new(token_ids);
     cache.insert(tokenizer.to_string(), Arc::clone(&token_ids));
 
     Ok(token_ids)

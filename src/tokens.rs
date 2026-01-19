@@ -30,12 +30,16 @@ pub fn count_tokens(text: &str, model_name: &str) -> Result<u32> {
     Ok(encoding.get_ids().len() as u32)
 }
 
-pub fn encode(text: &str, model_name: &str) -> Result<Vec<u32>> {
+pub fn encode_batch(texts: &[String], model_name: &str) -> Result<Vec<Vec<u32>>> {
     let tokenizer = get_tokenizer(model_name)?;
-    let encoding = tokenizer
-        .encode(text, false)
+    let inputs: Vec<&str> = texts.iter().map(|text| text.as_str()).collect();
+    let encodings = tokenizer
+        .encode_batch(inputs, false)
         .map_err(|e| anyhow!("Tokenization error for model '{}': {}", model_name, e))?;
-    Ok(encoding.get_ids().to_vec())
+    Ok(encodings
+        .into_iter()
+        .map(|encoding| encoding.get_ids().to_vec())
+        .collect())
 }
 
 pub fn decode(token_ids: &[u32], model_name: &str) -> Result<String> {
