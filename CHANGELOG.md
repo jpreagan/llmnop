@@ -5,7 +5,7 @@
 ### Enhancements
 
 - Add Responses API support with `--api` plus CLI-configured `--url` and `--api-key`. ([#27](https://github.com/jpreagan/llmnop/pull/27))
-- Add `--use-server-token-count` to use API-reported usage for token metrics. (#21)
+- Add `--use-server-token-count` to use API-reported usage for token metrics. ([#30](https://github.com/jpreagan/llmnop/pull/30))
 
 ## 0.5.0
 
