@@ -312,7 +312,12 @@ fn process_benchmark_data(
         Duration::ZERO
     };
 
-    let total_generated_tokens = tokens.output + tokens.reasoning;
+    let usage_only_reasoning = tokens.reasoning > 0 && reasoning_arrivals.is_empty();
+    let total_generated_tokens = if usage_only_reasoning {
+        tokens.output
+    } else {
+        tokens.output + tokens.reasoning
+    };
     let throughput = if generation_window.as_secs_f64() > 0.0 {
         total_generated_tokens as f64 / generation_window.as_secs_f64()
     } else {
@@ -626,6 +631,36 @@ mod tests {
     }
 
     #[test]
+    fn test_usage_only_reasoning_excluded_from_throughput() {
+        let start_time = Instant::now();
+
+        let content_arrivals = vec![
+            (start_time + Duration::from_millis(100), "Hello".to_string()),
+            (
+                start_time + Duration::from_millis(200),
+                " world".to_string(),
+            ),
+        ];
+
+        let end_time = start_time + Duration::from_millis(200);
+
+        let tokens = TokenCounts {
+            input: 10,
+            output: 4,
+            reasoning: 20,
+            total: 34,
+        };
+
+        let result = process_benchmark_data(start_time, end_time, &content_arrivals, &[], &tokens);
+
+        assert_eq!(result.ttft, Duration::from_millis(100));
+        assert_eq!(result.ttfo, Some(Duration::from_millis(100)));
+        assert_eq!(result.output_tokens, 4);
+        assert_eq!(result.reasoning_tokens, 20);
+        assert!((result.throughput - 40.0).abs() < 1e-9);
+    }
+
+    #[test]
     fn test_content_arrives_before_reasoning() {
         // Edge case: content arrives before reasoning (unusual but possible)
         let start_time = Instant::now();
@@ -697,5 +732,4 @@ mod tests {
         assert_eq!(counts.reasoning, 1);
         assert_eq!(counts.total, 13);
     }
-
 }

@@ -501,7 +501,7 @@ fn build_flattened_summary(
         .unwrap_or_else(|| "none".to_string());
 
     BenchmarkSummary {
-        version: "2026-01-18".to_string(),
+        version: "2026-01-19".to_string(),
         name: format!(
             "{}_{}_{}_summary",
             sanitize_filename::sanitize(config.model.replace(['/', '.'], "-")),
