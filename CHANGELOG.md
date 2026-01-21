@@ -6,6 +6,10 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 
+### Added
+
+- Add Anthropic Messages API support via `--api messages`. ([#36](https://github.com/jpreagan/llmnop/pull/36))
+
 ## [0.9.0]
 
 ### Changed
