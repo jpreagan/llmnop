@@ -53,6 +53,9 @@ pub struct Args {
 
     #[arg(long, help = "Hide progress bar")]
     pub no_progress: bool,
+
+    #[arg(short = 'q', long, help = "Suppress stdout output")]
+    pub quiet: bool,
 }
 
 #[cfg(test)]
@@ -104,5 +107,55 @@ mod tests {
     fn test_missing_api_key_is_error() {
         let result = Args::try_parse_from(["llmnop", "--model", "test-model", "--url", "http://x"]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_default_quiet_is_false() {
+        let args = Args::try_parse_from([
+            "llmnop",
+            "--model",
+            "test-model",
+            "--url",
+            "http://localhost:8000/v1",
+            "--api-key",
+            "test-key",
+        ])
+        .expect("parse args");
+
+        assert!(!args.quiet);
+    }
+
+    #[test]
+    fn test_parse_quiet_flag() {
+        let args = Args::try_parse_from([
+            "llmnop",
+            "--model",
+            "test-model",
+            "--url",
+            "http://localhost:8000/v1",
+            "--api-key",
+            "test-key",
+            "--quiet",
+        ])
+        .expect("parse args");
+
+        assert!(args.quiet);
+    }
+
+    #[test]
+    fn test_parse_quiet_short_flag() {
+        let args = Args::try_parse_from([
+            "llmnop",
+            "--model",
+            "test-model",
+            "--url",
+            "http://localhost:8000/v1",
+            "--api-key",
+            "test-key",
+            "-q",
+        ])
+        .expect("parse args");
+
+        assert!(args.quiet);
     }
 }
