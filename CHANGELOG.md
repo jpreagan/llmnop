@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Enhancements
+
+- Add `-q`/`--quiet` flag to suppress stdout output. ([#35](https://github.com/jpreagan/llmnop/pull/35))
+
 ## 0.6.0
 
 Released on 2026-01-18
