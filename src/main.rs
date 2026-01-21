@@ -77,7 +77,7 @@ async fn main() -> Result<()> {
     let mut in_flight = FuturesUnordered::new();
     let mut next_request_index = 0;
 
-    let disable_progress = args.no_progress || !io::stderr().is_terminal();
+    let disable_progress = args.quiet || args.no_progress || !io::stderr().is_terminal();
 
     let pb = if disable_progress {
         ProgressBar::hidden()
@@ -207,14 +207,16 @@ async fn main() -> Result<()> {
         successful_results.push(br.clone());
     }
 
-    print_summary_to_stdout(
-        &successful_results,
-        num_errors,
-        total_output_tokens,
-        total_reasoning_tokens,
-        overall_start,
-        overall_end,
-    );
+    if !args.quiet {
+        print_summary_to_stdout(
+            &successful_results,
+            num_errors,
+            total_output_tokens,
+            total_reasoning_tokens,
+            overall_start,
+            overall_end,
+        );
+    }
 
     let config = BenchmarkConfig {
         model: &args.model,
