@@ -14,6 +14,8 @@ use args::{ApiType, Args, OutputFormat};
 use async_openai::{Client, config::OpenAIConfig};
 use benchmark::{BenchmarkRequest, BenchmarkResult, run_benchmark};
 use clap::Parser;
+use client::ApiClient;
+use client::anthropic::messages::MessagesClient;
 use futures::{StreamExt, stream::FuturesUnordered};
 use indicatif::{ProgressBar, ProgressStyle};
 use prompt::{PromptConfig, generate_prompt};
@@ -53,7 +55,7 @@ fn sample_max_tokens(mean: u32, stddev: u32) -> u32 {
 }
 
 async fn run_benchmark_task(
-    client: Arc<Client<OpenAIConfig>>,
+    client: Arc<ApiClient>,
     api_type: ApiType,
     request: BenchmarkRequest,
 ) -> Result<BenchmarkResult> {
@@ -74,17 +76,28 @@ async fn main() -> Result<()> {
         Err(err) => err.exit(),
     };
     let model = model.to_string();
+    args.validate().map_err(|err| anyhow::anyhow!("{err}"))?;
 
-    let mut openai_config = OpenAIConfig::new().with_api_base(url);
-    if let Some(api_key) = args.api_key.clone() {
-        openai_config = openai_config.with_api_key(api_key);
-    }
-    let client = Arc::new(Client::with_config(openai_config));
+    let api = args.api;
+    let api_key = args.api_key.clone();
+    let client = match api {
+        ApiType::Messages => Arc::new(ApiClient::AnthropicMessages(Box::new(MessagesClient::new(
+            url.to_string(),
+            api_key.clone().unwrap_or_default(),
+        )))),
+        ApiType::Chat | ApiType::Responses => {
+            let mut openai_config = OpenAIConfig::new().with_api_base(url);
+            if let Some(api_key) = api_key {
+                openai_config = openai_config.with_api_key(api_key);
+            }
+            Arc::new(ApiClient::OpenAI(Box::new(Client::with_config(
+                openai_config,
+            ))))
+        }
+    };
 
     let tokenizer = args.tokenizer.clone().unwrap_or_else(|| model.clone());
-    let api = args.api;
     let use_server_token_count = args.use_server_token_count;
-
     let overall_start = Instant::now();
     let overall_start_unix_ns = unix_time_now_ns();
 

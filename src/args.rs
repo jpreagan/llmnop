@@ -9,6 +9,7 @@ use clap::{CommandFactory, Parser, ValueEnum};
 pub enum ApiType {
     Chat,
     Responses,
+    Messages,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
@@ -189,6 +190,13 @@ impl Args {
             self.output_format
         }
     }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if matches!(self.api, ApiType::Messages) && self.mean_output_tokens.is_none() {
+            return Err("--mean-output-tokens is required for --api messages".to_string());
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -228,6 +236,62 @@ mod tests {
         .expect("parse args");
 
         assert!(matches!(args.api, ApiType::Responses));
+    }
+
+    #[test]
+    fn test_parse_messages_api_type() {
+        let args = Args::try_parse_from([
+            "llmnop",
+            "--api",
+            "messages",
+            "--model",
+            "test-model",
+            "--url",
+            "https://api.anthropic.com/v1",
+            "--api-key",
+            "test-key",
+        ])
+        .expect("parse args");
+
+        assert!(matches!(args.api, ApiType::Messages));
+    }
+
+    #[test]
+    fn test_messages_api_requires_mean_output_tokens() {
+        let args = Args::try_parse_from([
+            "llmnop",
+            "--api",
+            "messages",
+            "--model",
+            "test-model",
+            "--url",
+            "https://api.anthropic.com/v1",
+            "--api-key",
+            "test-key",
+        ])
+        .expect("parse args");
+
+        assert!(args.validate().is_err());
+    }
+
+    #[test]
+    fn test_messages_api_allows_mean_output_tokens() {
+        let args = Args::try_parse_from([
+            "llmnop",
+            "--api",
+            "messages",
+            "--model",
+            "test-model",
+            "--url",
+            "https://api.anthropic.com/v1",
+            "--api-key",
+            "test-key",
+            "--mean-output-tokens",
+            "150",
+        ])
+        .expect("parse args");
+
+        assert!(args.validate().is_ok());
     }
 
     #[test]

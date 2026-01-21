@@ -82,9 +82,9 @@ Results print to stdout and save under the llmnop app results directory:
 | `--url`         | Base URL (e.g., `http://localhost:8000/v1`) |
 | `--api-key`     | API key for authentication                  |
 | `--model`, `-m` | Model name to benchmark                     |
-| `--api`         | API type: `chat` (default) or `responses`   |
+| `--api`         | API type: `chat` (default), `responses`, or `messages` |
 
-`chat` targets OpenAI's [Chat Completions API](https://platform.openai.com/docs/api-reference/chat). `responses` targets the [Responses API](https://platform.openai.com/docs/api-reference/responses) format, compatible with both OpenAI and [Open Responses](https://huggingface.co/blog/open-responses) servers.
+`chat` targets OpenAI's [Chat Completions API](https://platform.openai.com/docs/api-reference/chat). `responses` targets the [Responses API](https://platform.openai.com/docs/api-reference/responses) format, compatible with both OpenAI and [Open Responses](https://huggingface.co/blog/open-responses) servers. `messages` targets Anthropic's Messages API.
 
 ### Request Shaping
 
@@ -96,6 +96,8 @@ Control input and output token counts to simulate realistic workloads:
 | `--stddev-input-tokens`  | 0       | Add variance to input length                              |
 | `--mean-output-tokens`   | none    | Cap output length (recommended for consistent benchmarks) |
 | `--stddev-output-tokens` | 0       | Add variance to output length                             |
+
+For `--api messages`, `--mean-output-tokens` is required so llmnop can set `max_tokens` in the request.
 
 ### Load Testing
 
@@ -157,6 +159,14 @@ llmnop --url http://localhost:8000/v1 --api-key token-abc123 \
   --model Qwen/Qwen3-4B-Instruct-2507 \
   --output-format json \
   --max-num-completed-requests 1 | jq '.request_latency.p99'
+```
+
+**Anthropic Messages API:**
+
+```bash
+llmnop --api messages --url https://api.anthropic.com/v1 --api-key $ANTHROPIC_API_KEY \
+  --model claude-haiku-4-5 \
+  --mean-output-tokens 150
 ```
 
 **Custom tokenizer when model name doesn't match Hugging Face:**
