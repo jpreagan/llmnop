@@ -8,7 +8,7 @@
 
 ### Configuration
 
-- Remove `--no-progress`; use `--quiet` to suppress progress output.
+- Remove `--no-progress`; use `--quiet` to suppress progress output. ([#37](https://github.com/jpreagan/llmnop/pull/37))
 
 ## 0.6.0
 
