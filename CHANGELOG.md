@@ -5,6 +5,7 @@
 ### Enhancements
 
 - Add `-q`/`--quiet` flag to suppress stdout output. ([#35](https://github.com/jpreagan/llmnop/pull/35))
+- Add Anthropic Messages API support via `--api messages`. ([#36](https://github.com/jpreagan/llmnop/pull/36))
 
 ### Configuration
 

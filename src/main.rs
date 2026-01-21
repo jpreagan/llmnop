@@ -10,6 +10,8 @@ use args::{ApiType, Args};
 use async_openai::{Client, config::OpenAIConfig};
 use benchmark::{BenchmarkRequest, BenchmarkResult, run_benchmark};
 use clap::Parser;
+use client::ApiClient;
+use client::anthropic::messages::MessagesClient;
 use futures::{StreamExt, stream::FuturesUnordered};
 use indicatif::{ProgressBar, ProgressStyle};
 use prompt::{PromptConfig, generate_prompt};
@@ -39,7 +41,7 @@ fn sample_max_tokens(mean: u32, stddev: u32) -> u32 {
 }
 
 async fn run_benchmark_task(
-    client: Arc<Client<OpenAIConfig>>,
+    client: Arc<ApiClient>,
     api_type: ApiType,
     request: BenchmarkRequest,
 ) -> Result<BenchmarkResult> {
@@ -49,16 +51,26 @@ async fn run_benchmark_task(
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
+    args.validate().map_err(|err| anyhow::anyhow!("{err}"))?;
 
-    let openai_config = OpenAIConfig::new()
-        .with_api_key(args.api_key.clone())
-        .with_api_base(args.url.clone());
-    let client = Arc::new(Client::with_config(openai_config));
+    let api = args.api;
+    let client = match api {
+        ApiType::Messages => Arc::new(ApiClient::AnthropicMessages(Box::new(MessagesClient::new(
+            args.url.clone(),
+            args.api_key.clone(),
+        )))),
+        ApiType::Chat | ApiType::Responses => {
+            let openai_config = OpenAIConfig::new()
+                .with_api_key(args.api_key.clone())
+                .with_api_base(args.url.clone());
+            Arc::new(ApiClient::OpenAI(Box::new(Client::with_config(
+                openai_config,
+            ))))
+        }
+    };
 
     let tokenizer = args.tokenizer.clone().unwrap_or_else(|| args.model.clone());
-    let api = args.api;
     let use_server_token_count = args.use_server_token_count;
-
     let overall_start = Instant::now();
 
     let prompt_config = PromptConfig {
