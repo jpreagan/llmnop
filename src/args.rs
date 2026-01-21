@@ -4,12 +4,18 @@ use clap::{Parser, ValueEnum};
 pub enum ApiType {
     Chat,
     Responses,
+    Messages,
 }
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 pub struct Args {
-    #[arg(long, value_enum, default_value = "chat", help = "API type")]
+    #[arg(
+        long,
+        value_enum,
+        default_value = "chat",
+        help = "API type (chat, responses, messages)"
+    )]
     pub api: ApiType,
 
     #[arg(long, help = "Base URL (e.g., http://localhost:8000/v1)")]
@@ -55,6 +61,15 @@ pub struct Args {
     pub quiet: bool,
 }
 
+impl Args {
+    pub fn validate(&self) -> Result<(), String> {
+        if matches!(self.api, ApiType::Messages) && self.mean_output_tokens.is_none() {
+            return Err("--mean-output-tokens is required for --api messages".to_string());
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -92,6 +107,62 @@ mod tests {
         .expect("parse args");
 
         assert!(matches!(args.api, ApiType::Responses));
+    }
+
+    #[test]
+    fn test_parse_messages_api_type() {
+        let args = Args::try_parse_from([
+            "llmnop",
+            "--api",
+            "messages",
+            "--model",
+            "test-model",
+            "--url",
+            "https://api.anthropic.com/v1",
+            "--api-key",
+            "test-key",
+        ])
+        .expect("parse args");
+
+        assert!(matches!(args.api, ApiType::Messages));
+    }
+
+    #[test]
+    fn test_messages_api_requires_mean_output_tokens() {
+        let args = Args::try_parse_from([
+            "llmnop",
+            "--api",
+            "messages",
+            "--model",
+            "test-model",
+            "--url",
+            "https://api.anthropic.com/v1",
+            "--api-key",
+            "test-key",
+        ])
+        .expect("parse args");
+
+        assert!(args.validate().is_err());
+    }
+
+    #[test]
+    fn test_messages_api_allows_mean_output_tokens() {
+        let args = Args::try_parse_from([
+            "llmnop",
+            "--api",
+            "messages",
+            "--model",
+            "test-model",
+            "--url",
+            "https://api.anthropic.com/v1",
+            "--api-key",
+            "test-key",
+            "--mean-output-tokens",
+            "150",
+        ])
+        .expect("parse args");
+
+        assert!(args.validate().is_ok());
     }
 
     #[test]

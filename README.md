@@ -70,6 +70,8 @@ Control input and output token counts to simulate realistic workloads:
 | `--mean-output-tokens`   | none    | Cap output length (recommended for consistent benchmarks) |
 | `--stddev-output-tokens` | 0       | Add variance to output length                             |
 
+For `--api messages`, `--mean-output-tokens` is required so llmnop can set `max_tokens` in the request.
+
 ### Load Testing
 
 | Flag                           | Default | Description                |
@@ -93,7 +95,7 @@ Use `--use-server-token-count` when you trust the server's token counts and want
 
 | Flag            | Default        | Description                       |
 | --------------- | -------------- | --------------------------------- |
-| `--api`         | chat           | API type: `chat` or `responses`   |
+| `--api`         | chat           | API type: `chat`, `responses`, or `messages` |
 | `--results-dir` | result_outputs | Where to save JSON results        |
 | `--quiet`, `-q` | false          | Suppress stdout output            |
 
@@ -121,6 +123,14 @@ llmnop --url http://localhost:8000/v1 --api-key token-abc123 \
 ```bash
 llmnop --api responses --url http://localhost:8000/v1 --api-key token-abc123 \
   --model openai/gpt-oss-120b
+```
+
+**Anthropic Messages API:**
+
+```bash
+llmnop --api messages --url https://api.anthropic.com/v1 --api-key $ANTHROPIC_API_KEY \
+  --model claude-haiku-4-5 \
+  --mean-output-tokens 150
 ```
 
 **Custom tokenizer when model name doesn't match Hugging Face:**
