@@ -1,4 +1,7 @@
 use crate::benchmark::BenchmarkResult;
+use comfy_table::{
+    Attribute, Cell, CellAlignment, Color, ContentArrangement, Table, presets::UTF8_FULL_CONDENSED,
+};
 use serde::{Deserialize, Serialize};
 use std::fs::{File, create_dir_all};
 use std::io::Write;
@@ -37,17 +40,17 @@ pub struct IndividualResponse {
     #[serde(rename = "request_output_throughput_token_per_s")]
     pub request_output_throughput_token_per_s: Option<f64>,
 
-    #[serde(rename = "number_total_tokens")]
-    pub number_total_tokens: Option<u32>,
-
-    #[serde(rename = "number_output_tokens")]
-    pub number_output_tokens: Option<u32>,
+    #[serde(rename = "number_input_tokens")]
+    pub number_input_tokens: Option<u32>,
 
     #[serde(rename = "number_reasoning_tokens")]
     pub number_reasoning_tokens: Option<u32>,
 
-    #[serde(rename = "number_input_tokens")]
-    pub number_input_tokens: Option<u32>,
+    #[serde(rename = "number_output_tokens")]
+    pub number_output_tokens: Option<u32>,
+
+    #[serde(rename = "number_total_tokens")]
+    pub number_total_tokens: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -130,6 +133,17 @@ pub struct BenchmarkSummary {
     pub results_number_input_tokens_max: String,
     pub results_number_input_tokens_stddev: f64,
 
+    pub results_number_reasoning_tokens_quantiles_p25: f64,
+    pub results_number_reasoning_tokens_quantiles_p50: f64,
+    pub results_number_reasoning_tokens_quantiles_p75: f64,
+    pub results_number_reasoning_tokens_quantiles_p90: f64,
+    pub results_number_reasoning_tokens_quantiles_p95: f64,
+    pub results_number_reasoning_tokens_quantiles_p99: f64,
+    pub results_number_reasoning_tokens_mean: f64,
+    pub results_number_reasoning_tokens_min: String,
+    pub results_number_reasoning_tokens_max: String,
+    pub results_number_reasoning_tokens_stddev: f64,
+
     pub results_number_output_tokens_quantiles_p25: f64,
     pub results_number_output_tokens_quantiles_p50: f64,
     pub results_number_output_tokens_quantiles_p75: f64,
@@ -141,16 +155,16 @@ pub struct BenchmarkSummary {
     pub results_number_output_tokens_max: String,
     pub results_number_output_tokens_stddev: f64,
 
-    pub results_number_reasoning_tokens_quantiles_p25: f64,
-    pub results_number_reasoning_tokens_quantiles_p50: f64,
-    pub results_number_reasoning_tokens_quantiles_p75: f64,
-    pub results_number_reasoning_tokens_quantiles_p90: f64,
-    pub results_number_reasoning_tokens_quantiles_p95: f64,
-    pub results_number_reasoning_tokens_quantiles_p99: f64,
-    pub results_number_reasoning_tokens_mean: f64,
-    pub results_number_reasoning_tokens_min: String,
-    pub results_number_reasoning_tokens_max: String,
-    pub results_number_reasoning_tokens_stddev: f64,
+    pub results_number_total_tokens_quantiles_p25: f64,
+    pub results_number_total_tokens_quantiles_p50: f64,
+    pub results_number_total_tokens_quantiles_p75: f64,
+    pub results_number_total_tokens_quantiles_p90: f64,
+    pub results_number_total_tokens_quantiles_p95: f64,
+    pub results_number_total_tokens_quantiles_p99: f64,
+    pub results_number_total_tokens_mean: f64,
+    pub results_number_total_tokens_min: String,
+    pub results_number_total_tokens_max: String,
+    pub results_number_total_tokens_stddev: f64,
 
     pub results_num_requests_started: usize,
     pub results_error_rate: f64,
@@ -189,8 +203,9 @@ pub fn print_summary_to_stdout(
     let mut e2e_vec = Vec::new();
     let mut throughput_vec = Vec::new();
     let mut in_tokens_vec = Vec::new();
-    let mut out_tokens_vec = Vec::new();
     let mut reasoning_tokens_vec = Vec::new();
+    let mut out_tokens_vec = Vec::new();
+    let mut total_tokens_vec = Vec::new();
 
     for br in successful_results {
         inter_token_vec.push(br.inter_token_latency_s);
@@ -201,8 +216,9 @@ pub fn print_summary_to_stdout(
         e2e_vec.push(br.total_latency.as_secs_f64());
         throughput_vec.push(br.throughput);
         in_tokens_vec.push(br.input_tokens as f64);
-        out_tokens_vec.push(br.output_tokens as f64);
         reasoning_tokens_vec.push(br.reasoning_tokens as f64);
+        out_tokens_vec.push(br.output_tokens as f64);
+        total_tokens_vec.push(br.total_tokens as f64);
     }
 
     let inter_stats = compute_stats_for_flatten(&inter_token_vec);
@@ -211,55 +227,89 @@ pub fn print_summary_to_stdout(
     let e2e_stats = compute_stats_for_flatten(&e2e_vec);
     let thr_stats = compute_stats_for_flatten(&throughput_vec);
     let in_stats = compute_stats_for_flatten(&in_tokens_vec);
-    let out_stats = compute_stats_for_flatten(&out_tokens_vec);
     let reasoning_stats = compute_stats_for_flatten(&reasoning_tokens_vec);
+    let out_stats = compute_stats_for_flatten(&out_tokens_vec);
+    let total_stats = compute_stats_for_flatten(&total_tokens_vec);
+
+    let mut table = Table::new();
+    table.load_preset(UTF8_FULL_CONDENSED);
+    table.set_content_arrangement(ContentArrangement::Dynamic);
+    table.set_header(vec![
+        Cell::new("Metric").add_attribute(Attribute::Bold),
+        Cell::new("avg").add_attribute(Attribute::Bold),
+        Cell::new("min").add_attribute(Attribute::Bold),
+        Cell::new("max").add_attribute(Attribute::Bold),
+        Cell::new("p99").add_attribute(Attribute::Bold),
+        Cell::new("p90").add_attribute(Attribute::Bold),
+        Cell::new("p50").add_attribute(Attribute::Bold),
+        Cell::new("std").add_attribute(Attribute::Bold),
+    ]);
+
+    fn fmt_ms(s: f64) -> String {
+        format!("{:.2}", s * 1000.0)
+    }
+
+    fn fmt_f64(v: f64) -> String {
+        format!("{:.2}", v)
+    }
+
+    fn fmt_int(v: f64) -> String {
+        format!("{}", v as u32)
+    }
+
+    fn add_row(table: &mut Table, name: &str, stats: &StatSet, fmt: fn(f64) -> String) {
+        table.add_row(vec![
+            Cell::new(name).fg(Color::Cyan),
+            Cell::new(fmt(stats.mean))
+                .set_alignment(CellAlignment::Right)
+                .fg(Color::Green),
+            Cell::new(fmt(stats.min))
+                .set_alignment(CellAlignment::Right)
+                .fg(Color::Green),
+            Cell::new(fmt(stats.max))
+                .set_alignment(CellAlignment::Right)
+                .fg(Color::Green),
+            Cell::new(fmt(stats.quantiles.p99))
+                .set_alignment(CellAlignment::Right)
+                .fg(Color::Green),
+            Cell::new(fmt(stats.quantiles.p90))
+                .set_alignment(CellAlignment::Right)
+                .fg(Color::Green),
+            Cell::new(fmt(stats.quantiles.p50))
+                .set_alignment(CellAlignment::Right)
+                .fg(Color::Green),
+            Cell::new(fmt(stats.stddev))
+                .set_alignment(CellAlignment::Right)
+                .fg(Color::Green),
+        ]);
+    }
+
+    add_row(&mut table, "Inter Token Latency (ms)", &inter_stats, fmt_ms);
+    add_row(&mut table, "Time to First Token (ms)", &ttft_stats, fmt_ms);
+    if !ttfo_vec.is_empty() {
+        add_row(
+            &mut table,
+            "Time to First Output Token (ms)",
+            &ttfo_stats,
+            fmt_ms,
+        );
+    }
+    add_row(&mut table, "End to End Latency (ms)", &e2e_stats, fmt_ms);
+    add_row(
+        &mut table,
+        "Output Throughput Per Request (t/s)",
+        &thr_stats,
+        fmt_f64,
+    );
+    add_row(&mut table, "Input Tokens", &in_stats, fmt_int);
+    if reasoning_stats.max > 0.0 {
+        add_row(&mut table, "Reasoning Tokens", &reasoning_stats, fmt_int);
+    }
+    add_row(&mut table, "Output Tokens", &out_stats, fmt_int);
+    add_row(&mut table, "Total Tokens", &total_stats, fmt_int);
 
     println!();
-
-    let stats_to_print = [
-        ("inter_token_latency_s", &inter_stats, false),
-        ("ttft_s", &ttft_stats, false),
-        ("end_to_end_latency_s", &e2e_stats, false),
-        ("request_output_throughput_token_per_s", &thr_stats, false),
-        ("number_input_tokens", &in_stats, true),
-        ("number_output_tokens", &out_stats, true),
-        ("number_reasoning_tokens", &reasoning_stats, true),
-    ];
-
-    for (name, stats, format_as_int) in &stats_to_print {
-        println!("{}", name);
-        println!("    p25 = {}", stats.quantiles.p25);
-        println!("    p50 = {}", stats.quantiles.p50);
-        println!("    p75 = {}", stats.quantiles.p75);
-        println!("    p90 = {}", stats.quantiles.p90);
-        println!("    p95 = {}", stats.quantiles.p95);
-        println!("    p99 = {}", stats.quantiles.p99);
-        println!("    mean = {}", stats.mean);
-        if *format_as_int {
-            println!("    min = {}", stats.min as u32);
-            println!("    max = {}", stats.max as u32);
-        } else {
-            println!("    min = {}", stats.min);
-            println!("    max = {}", stats.max);
-        }
-        println!("    stddev = {}", stats.stddev);
-    }
-
-    if !ttfo_vec.is_empty() {
-        println!("ttfo_s (time to first output token)");
-        println!("    p25 = {}", ttfo_stats.quantiles.p25);
-        println!("    p50 = {}", ttfo_stats.quantiles.p50);
-        println!("    p75 = {}", ttfo_stats.quantiles.p75);
-        println!("    p90 = {}", ttfo_stats.quantiles.p90);
-        println!("    p95 = {}", ttfo_stats.quantiles.p95);
-        println!("    p99 = {}", ttfo_stats.quantiles.p99);
-        println!("    mean = {}", ttfo_stats.mean);
-        println!("    min = {}", ttfo_stats.min);
-        println!("    max = {}", ttfo_stats.max);
-        println!("    stddev = {}", ttfo_stats.stddev);
-    }
-
-    println!("Number Of Errored Requests: {}", num_errors);
+    println!("{table}");
 
     let total_generated_tokens = total_output_tokens + total_reasoning_tokens;
     let overall_output_throughput = if total_time_s > 0.0 {
@@ -267,20 +317,32 @@ pub fn print_summary_to_stdout(
     } else {
         0.0
     };
-    println!("Overall Output Throughput: {}", overall_output_throughput);
 
     let num_completed_requests = successful_results.len();
-    println!("Number Of Completed Requests: {}", num_completed_requests);
-
     let completed_requests_per_min = if total_time_s > 0.0 {
         num_completed_requests as f64 / total_time_s * 60.0
     } else {
         0.0
     };
+
+    const CYAN: &str = "\x1b[36m";
+    const GREEN: &str = "\x1b[32m";
+    const RESET: &str = "\x1b[0m";
+
+    println!();
     println!(
-        "Completed Requests Per Minute: {}",
+        "{CYAN}Overall Output Throughput:{RESET} {GREEN}{:.2} tokens/sec{RESET}",
+        overall_output_throughput
+    );
+    println!(
+        "{CYAN}Completed Requests:{RESET} {GREEN}{}{RESET}",
+        num_completed_requests
+    );
+    println!(
+        "{CYAN}Requests Per Minute:{RESET} {GREEN}{:.2}{RESET}",
         completed_requests_per_min
     );
+    println!("{CYAN}Errors:{RESET} {GREEN}{}{RESET}", num_errors);
 }
 
 pub fn write_results_json(
@@ -412,8 +474,9 @@ fn build_flattened_summary(
     let mut e2e_vec = Vec::new();
     let mut throughput_vec = Vec::new();
     let mut in_tokens_vec = Vec::new();
-    let mut out_tokens_vec = Vec::new();
     let mut reasoning_tokens_vec = Vec::new();
+    let mut out_tokens_vec = Vec::new();
+    let mut total_tokens_vec = Vec::new();
 
     for br in successful_results {
         inter_token_vec.push(br.inter_token_latency_s);
@@ -424,8 +487,9 @@ fn build_flattened_summary(
         e2e_vec.push(br.total_latency.as_secs_f64());
         throughput_vec.push(br.throughput);
         in_tokens_vec.push(br.input_tokens as f64);
-        out_tokens_vec.push(br.output_tokens as f64);
         reasoning_tokens_vec.push(br.reasoning_tokens as f64);
+        out_tokens_vec.push(br.output_tokens as f64);
+        total_tokens_vec.push(br.total_tokens as f64);
     }
 
     let inter_stats = compute_stats_for_flatten(&inter_token_vec);
@@ -434,8 +498,9 @@ fn build_flattened_summary(
     let e2e_stats = compute_stats_for_flatten(&e2e_vec);
     let thr_stats = compute_stats_for_flatten(&throughput_vec);
     let in_stats = compute_stats_for_flatten(&in_tokens_vec);
-    let out_stats = compute_stats_for_flatten(&out_tokens_vec);
     let reasoning_stats = compute_stats_for_flatten(&reasoning_tokens_vec);
+    let out_stats = compute_stats_for_flatten(&out_tokens_vec);
+    let total_stats = compute_stats_for_flatten(&total_tokens_vec);
 
     let error_rate = if num_requests_started == 0 {
         0.0
@@ -501,7 +566,7 @@ fn build_flattened_summary(
         .unwrap_or_else(|| "none".to_string());
 
     BenchmarkSummary {
-        version: "2026-01-19".to_string(),
+        version: "2026-01-20".to_string(),
         name: format!(
             "{}_{}_{}_summary",
             sanitize_filename::sanitize(config.model.replace(['/', '.'], "-")),
@@ -584,6 +649,17 @@ fn build_flattened_summary(
         results_number_input_tokens_max: format!("{}", in_stats.max as u32),
         results_number_input_tokens_stddev: in_stats.stddev,
 
+        results_number_reasoning_tokens_quantiles_p25: reasoning_stats.quantiles.p25,
+        results_number_reasoning_tokens_quantiles_p50: reasoning_stats.quantiles.p50,
+        results_number_reasoning_tokens_quantiles_p75: reasoning_stats.quantiles.p75,
+        results_number_reasoning_tokens_quantiles_p90: reasoning_stats.quantiles.p90,
+        results_number_reasoning_tokens_quantiles_p95: reasoning_stats.quantiles.p95,
+        results_number_reasoning_tokens_quantiles_p99: reasoning_stats.quantiles.p99,
+        results_number_reasoning_tokens_mean: reasoning_stats.mean,
+        results_number_reasoning_tokens_min: format!("{}", reasoning_stats.min as u32),
+        results_number_reasoning_tokens_max: format!("{}", reasoning_stats.max as u32),
+        results_number_reasoning_tokens_stddev: reasoning_stats.stddev,
+
         results_number_output_tokens_quantiles_p25: out_stats.quantiles.p25,
         results_number_output_tokens_quantiles_p50: out_stats.quantiles.p50,
         results_number_output_tokens_quantiles_p75: out_stats.quantiles.p75,
@@ -595,16 +671,16 @@ fn build_flattened_summary(
         results_number_output_tokens_max: format!("{}", out_stats.max as u32),
         results_number_output_tokens_stddev: out_stats.stddev,
 
-        results_number_reasoning_tokens_quantiles_p25: reasoning_stats.quantiles.p25,
-        results_number_reasoning_tokens_quantiles_p50: reasoning_stats.quantiles.p50,
-        results_number_reasoning_tokens_quantiles_p75: reasoning_stats.quantiles.p75,
-        results_number_reasoning_tokens_quantiles_p90: reasoning_stats.quantiles.p90,
-        results_number_reasoning_tokens_quantiles_p95: reasoning_stats.quantiles.p95,
-        results_number_reasoning_tokens_quantiles_p99: reasoning_stats.quantiles.p99,
-        results_number_reasoning_tokens_mean: reasoning_stats.mean,
-        results_number_reasoning_tokens_min: format!("{}", reasoning_stats.min as u32),
-        results_number_reasoning_tokens_max: format!("{}", reasoning_stats.max as u32),
-        results_number_reasoning_tokens_stddev: reasoning_stats.stddev,
+        results_number_total_tokens_quantiles_p25: total_stats.quantiles.p25,
+        results_number_total_tokens_quantiles_p50: total_stats.quantiles.p50,
+        results_number_total_tokens_quantiles_p75: total_stats.quantiles.p75,
+        results_number_total_tokens_quantiles_p90: total_stats.quantiles.p90,
+        results_number_total_tokens_quantiles_p95: total_stats.quantiles.p95,
+        results_number_total_tokens_quantiles_p99: total_stats.quantiles.p99,
+        results_number_total_tokens_mean: total_stats.mean,
+        results_number_total_tokens_min: format!("{}", total_stats.min as u32),
+        results_number_total_tokens_max: format!("{}", total_stats.max as u32),
+        results_number_total_tokens_stddev: total_stats.stddev,
 
         results_num_requests_started: num_requests_started,
         results_error_rate: error_rate,
