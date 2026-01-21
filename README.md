@@ -95,7 +95,7 @@ Use `--use-server-token-count` when you trust the server's token counts and want
 | --------------- | -------------- | --------------------------------- |
 | `--api`         | chat           | API type: `chat` or `responses`   |
 | `--results-dir` | result_outputs | Where to save JSON results        |
-| `--no-progress` | false          | Hide progress bar (useful for CI) |
+| `--quiet`, `-q` | false          | Suppress stdout output            |
 
 ## Examples
 

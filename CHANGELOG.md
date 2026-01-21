@@ -6,6 +6,10 @@
 
 - Add `-q`/`--quiet` flag to suppress stdout output. ([#35](https://github.com/jpreagan/llmnop/pull/35))
 
+### Configuration
+
+- Remove `--no-progress`; use `--quiet` to suppress progress output. ([#37](https://github.com/jpreagan/llmnop/pull/37))
+
 ## 0.6.0
 
 Released on 2026-01-18

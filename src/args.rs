@@ -51,9 +51,6 @@ pub struct Args {
     #[arg(long, default_value = "600", help = "Request timeout")]
     pub timeout: u64,
 
-    #[arg(long, help = "Hide progress bar")]
-    pub no_progress: bool,
-
     #[arg(short = 'q', long, help = "Suppress stdout output")]
     pub quiet: bool,
 }

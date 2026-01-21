@@ -77,7 +77,7 @@ async fn main() -> Result<()> {
     let mut in_flight = FuturesUnordered::new();
     let mut next_request_index = 0;
 
-    let disable_progress = args.quiet || args.no_progress || !io::stderr().is_terminal();
+    let disable_progress = args.quiet || !io::stderr().is_terminal();
 
     let pb = if disable_progress {
         ProgressBar::hidden()
