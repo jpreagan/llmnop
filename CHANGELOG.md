@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.7.0
+
+Released on 2026-01-25
 
 ### Enhancements
 
