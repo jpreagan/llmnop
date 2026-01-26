@@ -5,6 +5,7 @@
 ### Enhancements
 
 - Add `-q`/`--quiet` flag to suppress stdout output. ([#35](https://github.com/jpreagan/llmnop/pull/35))
+- Make `--api-key` optional for unauthenticated servers. ([#38](https://github.com/jpreagan/llmnop/pull/38))
 
 ### Configuration
 
