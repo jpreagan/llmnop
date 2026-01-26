@@ -50,10 +50,10 @@ async fn run_benchmark_task(
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    let api_key = args.api_key.clone().unwrap_or_default();
-    let openai_config = OpenAIConfig::new()
-        .with_api_key(api_key)
-        .with_api_base(args.url.clone());
+    let mut openai_config = OpenAIConfig::new().with_api_base(args.url.clone());
+    if let Some(api_key) = args.api_key.clone() {
+        openai_config = openai_config.with_api_key(api_key);
+    }
     let client = Arc::new(Client::with_config(openai_config));
 
     let tokenizer = args.tokenizer.clone().unwrap_or_else(|| args.model.clone());

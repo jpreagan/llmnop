@@ -1,10 +1,9 @@
 use anyhow::{Context, Result, anyhow};
-use async_openai::Client;
-use async_openai::config::OpenAIConfig;
 use async_openai::types::chat::{
     ChatCompletionRequestUserMessageArgs, ChatCompletionStreamOptions, CompletionUsage,
     CreateChatCompletionRequestArgs,
 };
+use async_openai::{Client, config::OpenAIConfig};
 use futures::{Stream, StreamExt};
 use serde::Deserialize;
 use serde_json::Value;
