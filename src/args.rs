@@ -16,7 +16,7 @@ pub struct Args {
     pub url: String,
 
     #[arg(long, help = "API key")]
-    pub api_key: String,
+    pub api_key: Option<String>,
 
     #[arg(short, long, help = "Model name")]
     pub model: String,
@@ -101,9 +101,10 @@ mod tests {
     }
 
     #[test]
-    fn test_missing_api_key_is_error() {
-        let result = Args::try_parse_from(["llmnop", "--model", "test-model", "--url", "http://x"]);
-        assert!(result.is_err());
+    fn test_missing_api_key_is_allowed() {
+        let args = Args::try_parse_from(["llmnop", "--model", "test-model", "--url", "http://x"])
+            .expect("parse args");
+        assert!(args.api_key.is_none());
     }
 
     #[test]

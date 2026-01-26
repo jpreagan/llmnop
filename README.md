@@ -51,7 +51,7 @@ For reasoning models, TTFT includes thinking tokens. TTFO measures time until ac
 
 ## Configuration
 
-### Required
+### Endpoint
 
 | Flag            | Description                                 |
 | --------------- | ------------------------------------------- |
