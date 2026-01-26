@@ -9,49 +9,116 @@ pub enum ApiType {
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 pub struct Args {
-    #[arg(long, value_enum, default_value = "chat", help = "API type")]
-    pub api: ApiType,
-
-    #[arg(long, help = "Base URL (e.g., http://localhost:8000/v1)")]
+    // Endpoint
+    #[arg(
+        long,
+        help = "Base URL (e.g., http://localhost:8000/v1)",
+        help_heading = "Endpoint"
+    )]
     pub url: String,
 
-    #[arg(long, help = "API key")]
+    #[arg(long, help = "API key", help_heading = "Endpoint")]
     pub api_key: Option<String>,
 
-    #[arg(short, long, help = "Model name")]
+    #[arg(short, long, help = "Model name", help_heading = "Endpoint")]
     pub model: String,
 
-    #[arg(long, help = "Hugging Face tokenizer (defaults to model name)")]
-    pub tokenizer: Option<String>,
+    #[arg(
+        long,
+        value_enum,
+        default_value = "chat",
+        help = "API type",
+        help_heading = "Endpoint"
+    )]
+    pub api: ApiType,
 
-    #[arg(long, help = "Use server-reported token usage for metrics")]
-    pub use_server_token_count: bool,
-
-    #[arg(long, default_value = "10", help = "Number of requests")]
-    pub max_num_completed_requests: u32,
-
-    #[arg(long, default_value = "1", help = "Parallel requests")]
-    pub num_concurrent_requests: u32,
-
-    #[arg(long, default_value = "550", help = "Target input length")]
+    // Request Shaping
+    #[arg(
+        long,
+        default_value = "550",
+        help = "Target input length",
+        help_heading = "Request Shaping"
+    )]
     pub mean_input_tokens: u32,
 
-    #[arg(long, default_value = "0", help = "Input length variance")]
+    #[arg(
+        long,
+        default_value = "0",
+        help = "Input length variance",
+        help_heading = "Request Shaping"
+    )]
     pub stddev_input_tokens: u32,
 
-    #[arg(long, help = "Target output length [default: none]")]
+    #[arg(
+        long,
+        help = "Target output length [default: none]",
+        help_heading = "Request Shaping"
+    )]
     pub mean_output_tokens: Option<u32>,
 
-    #[arg(long, default_value = "0", help = "Output length variance")]
+    #[arg(
+        long,
+        default_value = "0",
+        help = "Output length variance",
+        help_heading = "Request Shaping"
+    )]
     pub stddev_output_tokens: u32,
 
-    #[arg(long, default_value = "result_outputs", help = "Output directory")]
-    pub results_dir: String,
+    // Load Testing
+    #[arg(
+        long,
+        default_value = "10",
+        help = "Number of requests",
+        help_heading = "Load Testing"
+    )]
+    pub max_num_completed_requests: u32,
 
-    #[arg(long, default_value = "600", help = "Request timeout")]
+    #[arg(
+        long,
+        default_value = "1",
+        help = "Parallel requests",
+        help_heading = "Load Testing"
+    )]
+    pub num_concurrent_requests: u32,
+
+    #[arg(
+        long,
+        default_value = "600",
+        help = "Request timeout",
+        help_heading = "Load Testing"
+    )]
     pub timeout: u64,
 
-    #[arg(short = 'q', long, help = "Suppress stdout output")]
+    // Tokenization
+    #[arg(
+        long,
+        help = "Hugging Face tokenizer (defaults to model name)",
+        help_heading = "Tokenization"
+    )]
+    pub tokenizer: Option<String>,
+
+    #[arg(
+        long,
+        help = "Use server-reported token usage for metrics",
+        help_heading = "Tokenization"
+    )]
+    pub use_server_token_count: bool,
+
+    // Output
+    #[arg(
+        long,
+        default_value = "result_outputs",
+        help = "Output directory",
+        help_heading = "Output"
+    )]
+    pub results_dir: String,
+
+    #[arg(
+        short = 'q',
+        long,
+        help = "Suppress stdout output",
+        help_heading = "Output"
+    )]
     pub quiet: bool,
 }
 
