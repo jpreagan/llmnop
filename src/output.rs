@@ -297,7 +297,7 @@ pub fn print_summary_to_stdout(
     add_row(&mut table, "End to End Latency (ms)", &e2e_stats, fmt_ms);
     add_row(
         &mut table,
-        "Output Throughput Per Request (t/s)",
+        "Output Throughput Per Request (tokens/s)",
         &thr_stats,
         fmt_f64,
     );
@@ -331,7 +331,7 @@ pub fn print_summary_to_stdout(
 
     println!();
     println!(
-        "{CYAN}Overall Output Throughput:{RESET} {GREEN}{:.2} tokens/sec{RESET}",
+        "{CYAN}Overall Output Throughput:{RESET} {GREEN}{:.2} tokens/s{RESET}",
         overall_output_throughput
     );
     println!(
