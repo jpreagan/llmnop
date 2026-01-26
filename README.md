@@ -58,6 +58,9 @@ For reasoning models, TTFT includes thinking tokens. TTFO measures time until ac
 | `--url`         | Base URL (e.g., `http://localhost:8000/v1`) |
 | `--api-key`     | API key for authentication                  |
 | `--model`, `-m` | Model name to benchmark                     |
+| `--api`         | API type: `chat` (default) or `responses`   |
+
+`chat` targets OpenAI's [Chat Completions API](https://platform.openai.com/docs/api-reference/chat). `responses` targets the [Responses API](https://platform.openai.com/docs/api-reference/responses) format, compatible with both OpenAI and [Open Responses](https://huggingface.co/blog/open-responses) servers.
 
 ### Request Shaping
 
@@ -91,11 +94,10 @@ Use `--use-server-token-count` when you trust the server's token counts and want
 
 ### Output
 
-| Flag            | Default        | Description                       |
-| --------------- | -------------- | --------------------------------- |
-| `--api`         | chat           | API type: `chat` or `responses`   |
-| `--results-dir` | result_outputs | Where to save JSON results        |
-| `--quiet`, `-q` | false          | Suppress stdout output            |
+| Flag            | Default        | Description                |
+| --------------- | -------------- | -------------------------- |
+| `--results-dir` | result_outputs | Where to save JSON results |
+| `--quiet`, `-q` | false          | Suppress stdout output     |
 
 ## Examples
 
