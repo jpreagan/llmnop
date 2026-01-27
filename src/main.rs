@@ -3,9 +3,13 @@ mod benchmark;
 mod client;
 mod output;
 mod prompt;
+#[cfg(feature = "self-update")]
+mod self_update;
 mod tokens;
 
 use anyhow::Result;
+#[cfg(feature = "self-update")]
+use args::Command;
 use args::{ApiType, Args};
 use async_openai::{Client, config::OpenAIConfig};
 use benchmark::{BenchmarkRequest, BenchmarkResult, run_benchmark};
@@ -50,13 +54,24 @@ async fn run_benchmark_task(
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    let mut openai_config = OpenAIConfig::new().with_api_base(args.url.clone());
+    #[cfg(feature = "self-update")]
+    if let Some(Command::Update) = args.command {
+        return self_update::run_update().await;
+    }
+
+    let (url, model) = match args.require_benchmark_args() {
+        Ok(values) => values,
+        Err(err) => err.exit(),
+    };
+    let model = model.to_string();
+
+    let mut openai_config = OpenAIConfig::new().with_api_base(url);
     if let Some(api_key) = args.api_key.clone() {
         openai_config = openai_config.with_api_key(api_key);
     }
     let client = Arc::new(Client::with_config(openai_config));
 
-    let tokenizer = args.tokenizer.clone().unwrap_or_else(|| args.model.clone());
+    let tokenizer = args.tokenizer.clone().unwrap_or_else(|| model.clone());
     let api = args.api;
     let use_server_token_count = args.use_server_token_count;
 
@@ -106,7 +121,7 @@ async fn main() -> Result<()> {
         && in_flight.len() < args.num_concurrent_requests as usize
     {
         let prompt = &prompts[next_request_index as usize];
-        let model_name = args.model.clone();
+        let model_name = model.clone();
         let prompt_clone = prompt.clone();
         let client_clone = client.clone();
         let tokenizer_clone = tokenizer.clone();
@@ -152,7 +167,7 @@ async fn main() -> Result<()> {
 
                 if !timeout_occurred && next_request_index < args.max_num_completed_requests {
                     let prompt = &prompts[next_request_index as usize];
-                    let model_name = args.model.clone();
+                    let model_name = model.clone();
                     let prompt_clone = prompt.clone();
                     let client_clone = client.clone();
                     let tokenizer_clone = tokenizer.clone();
@@ -220,7 +235,7 @@ async fn main() -> Result<()> {
     }
 
     let config = BenchmarkConfig {
-        model: &args.model,
+        model: &model,
         tokenizer: &tokenizer,
         mean_input_tokens: args.mean_input_tokens,
         stddev_input_tokens: args.stddev_input_tokens,

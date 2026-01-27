@@ -12,19 +12,33 @@ It's a single binary with no dependencies, just download and run. Use it to comp
 
 ## Installation
 
-Homebrew:
-
-```bash
-brew install jpreagan/tap/llmnop
-```
-
-Or with the shell installer:
+Use the installer:
 
 ```bash
 curl -sSfL https://github.com/jpreagan/llmnop/releases/latest/download/llmnop-installer.sh | sh
 ```
 
-The shell installer places `llmnop` in `~/.local/bin`. Make sure that's on your `PATH`.
+It places `llmnop` in `~/.local/bin`. Make sure that's on your `PATH`.
+
+Or use Homebrew:
+
+```bash
+brew install jpreagan/tap/llmnop
+```
+
+## Updating
+
+If you used the installer, update in place:
+
+```bash
+llmnop update
+```
+
+If you used Homebrew:
+
+```bash
+brew upgrade llmnop
+```
 
 ## Quick Start
 

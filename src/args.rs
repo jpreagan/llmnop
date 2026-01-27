@@ -1,4 +1,7 @@
-use clap::{Parser, ValueEnum};
+#[cfg(feature = "self-update")]
+use clap::Subcommand;
+use clap::error::ErrorKind;
+use clap::{CommandFactory, Parser, ValueEnum};
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum ApiType {
@@ -6,22 +9,34 @@ pub enum ApiType {
     Responses,
 }
 
+#[cfg(feature = "self-update")]
+#[derive(Debug, Subcommand)]
+pub enum Command {
+    /// Update llmnop (standalone installs only)
+    Update,
+}
+
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
+#[cfg_attr(feature = "self-update", command(subcommand_negates_reqs = true))]
 pub struct Args {
+    #[cfg(feature = "self-update")]
+    #[command(subcommand)]
+    pub command: Option<Command>,
+
     // Endpoint
     #[arg(
         long,
         help = "Base URL (e.g., http://localhost:8000/v1)",
         help_heading = "Endpoint"
     )]
-    pub url: String,
+    pub url: Option<String>,
 
     #[arg(long, help = "API key", help_heading = "Endpoint")]
     pub api_key: Option<String>,
 
     #[arg(short, long, help = "Model name", help_heading = "Endpoint")]
-    pub model: String,
+    pub model: Option<String>,
 
     #[arg(
         long,
@@ -122,6 +137,27 @@ pub struct Args {
     pub quiet: bool,
 }
 
+impl Args {
+    pub fn require_benchmark_args(&self) -> Result<(&str, &str), clap::Error> {
+        let url = self
+            .url
+            .as_deref()
+            .ok_or_else(|| Self::missing_required_arg("--url"))?;
+        let model = self
+            .model
+            .as_deref()
+            .ok_or_else(|| Self::missing_required_arg("--model"))?;
+        Ok((url, model))
+    }
+
+    fn missing_required_arg(arg: &str) -> clap::Error {
+        Self::command().error(
+            ErrorKind::MissingRequiredArgument,
+            format!("the following required argument was not provided: {arg}"),
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -163,8 +199,16 @@ mod tests {
 
     #[test]
     fn test_missing_url_is_error() {
-        let result = Args::try_parse_from(["llmnop", "--model", "test-model", "--api-key", "key"]);
-        assert!(result.is_err());
+        let args = Args::try_parse_from(["llmnop", "--model", "test-model", "--api-key", "key"])
+            .expect("parse args");
+        assert!(args.require_benchmark_args().is_err());
+    }
+
+    #[test]
+    fn test_missing_model_is_error() {
+        let args = Args::try_parse_from(["llmnop", "--url", "http://localhost:8000/v1"])
+            .expect("parse args");
+        assert!(args.require_benchmark_args().is_err());
     }
 
     #[test]
@@ -222,5 +266,12 @@ mod tests {
         .expect("parse args");
 
         assert!(args.quiet);
+    }
+
+    #[cfg(feature = "self-update")]
+    #[test]
+    fn test_parse_update_command() {
+        let args = Args::try_parse_from(["llmnop", "update"]).expect("parse args");
+        assert!(matches!(args.command, Some(Command::Update)));
     }
 }
