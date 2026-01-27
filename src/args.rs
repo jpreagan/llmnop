@@ -1,5 +1,7 @@
 #[cfg(feature = "self-update")]
 use clap::Subcommand;
+use clap::builder::Styles;
+use clap::builder::styling::{AnsiColor, Effects};
 use clap::error::ErrorKind;
 use clap::{CommandFactory, Parser, ValueEnum};
 
@@ -16,8 +18,14 @@ pub enum Command {
     Update,
 }
 
+const STYLES: Styles = Styles::styled()
+    .header(AnsiColor::Green.on_default().effects(Effects::BOLD))
+    .usage(AnsiColor::Green.on_default().effects(Effects::BOLD))
+    .literal(AnsiColor::Cyan.on_default().effects(Effects::BOLD))
+    .placeholder(AnsiColor::Cyan.on_default());
+
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[command(author, version, about, long_about = None, styles = STYLES)]
 #[cfg_attr(feature = "self-update", command(subcommand_negates_reqs = true))]
 pub struct Args {
     #[cfg(feature = "self-update")]
