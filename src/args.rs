@@ -1,7 +1,7 @@
 #[cfg(feature = "self-update")]
 use clap::Subcommand;
-use clap::builder::styling::{AnsiColor, Effects};
 use clap::builder::Styles;
+use clap::builder::styling::{AnsiColor, Effects};
 use clap::error::ErrorKind;
 use clap::{CommandFactory, Parser, ValueEnum};
 
