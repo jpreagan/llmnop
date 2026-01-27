@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Enhancements
+
+- Add `llmnop update` command for standalone installs.
+
 ## 0.7.0
 
 Released on 2026-01-25
