@@ -20,6 +20,7 @@ pub struct BenchmarkResult {
     pub output_tokens: u32,
     pub reasoning_tokens: u32,
     pub inter_token_latency_s: f64,
+    pub inter_event_latency_s: f64,
     pub total_tokens: u32,
 }
 
@@ -283,23 +284,21 @@ fn process_benchmark_data(
         .collect();
     all_arrivals.sort();
 
-    let mut time_to_next_token = Vec::new();
+    let mut time_to_next_event = Vec::new();
     let mut last_time: Option<Instant> = None;
 
     for arrive_time in all_arrivals.iter() {
         if let Some(lt) = last_time {
             let gap = arrive_time.duration_since(lt);
-            time_to_next_token.push(gap);
+            time_to_next_event.push(gap);
         }
         last_time = Some(*arrive_time);
     }
 
     let total_latency = end_time.duration_since(start_time);
-
-    let sum_time_to_next_token: Duration = time_to_next_token.iter().sum();
-
-    let inter_token_latency_s = if !time_to_next_token.is_empty() {
-        sum_time_to_next_token.as_secs_f64() / time_to_next_token.len() as f64
+    let sum_time_to_next_event: Duration = time_to_next_event.iter().sum();
+    let inter_event_latency_s = if !time_to_next_event.is_empty() {
+        sum_time_to_next_event.as_secs_f64() / time_to_next_event.len() as f64
     } else {
         0.0
     };
@@ -318,6 +317,12 @@ fn process_benchmark_data(
     } else {
         tokens.output + tokens.reasoning
     };
+    let inter_token_latency_s =
+        if generation_window.as_secs_f64() > 0.0 && total_generated_tokens >= 2 {
+            generation_window.as_secs_f64() / (total_generated_tokens as f64 - 1.0)
+        } else {
+            0.0
+        };
     let throughput = if generation_window.as_secs_f64() > 0.0 {
         total_generated_tokens as f64 / generation_window.as_secs_f64()
     } else {
@@ -333,6 +338,7 @@ fn process_benchmark_data(
         output_tokens: tokens.output,
         reasoning_tokens: tokens.reasoning,
         inter_token_latency_s,
+        inter_event_latency_s,
         total_tokens: tokens.total,
     }
 }
@@ -379,6 +385,7 @@ mod tests {
         assert_eq!(result.total_tokens, 13);
         // Gap 1: 128-64 = 64ms, Gap 2: 192-128 = 64ms -> Average: 64ms = 0.064s
         assert_eq!(result.inter_token_latency_s, 0.064);
+        assert_eq!(result.inter_event_latency_s, 0.064);
     }
 
     #[test]
@@ -442,6 +449,7 @@ mod tests {
         // Inter-token latency should only include the 2 gaps between tokens (100ms each)
         // Gap 1: 100ms, Gap 2: 100ms -> Average: 100ms = 0.1s
         assert_eq!(result.inter_token_latency_s, 0.1);
+        assert_eq!(result.inter_event_latency_s, 0.1);
     }
 
     #[test]
@@ -467,6 +475,7 @@ mod tests {
 
         // No inter-token latency since there's only one token
         assert_eq!(result.inter_token_latency_s, 0.0);
+        assert_eq!(result.inter_event_latency_s, 0.0);
 
         // Single chunk => generation window duration = 0 => throughput reported as 0.0
         assert_eq!(result.throughput, 0.0);
@@ -516,6 +525,7 @@ mod tests {
         assert_eq!(result.ttfo, None);
 
         assert_eq!(result.inter_token_latency_s, 0.0);
+        assert_eq!(result.inter_event_latency_s, 0.0);
         assert_eq!(result.throughput, 0.0);
     }
 
@@ -543,6 +553,36 @@ mod tests {
         assert_eq!(result.reasoning_tokens, 0);
         assert_eq!(result.total_tokens, 10);
         assert_eq!(result.inter_token_latency_s, 0.0);
+        assert_eq!(result.inter_event_latency_s, 0.0);
+    }
+
+    #[test]
+    fn test_inter_token_latency_uses_token_count_not_event_count() {
+        let start_time = Instant::now();
+        let content_arrivals = vec![
+            (
+                start_time + Duration::from_millis(100),
+                "hello ".to_string(),
+            ),
+            (start_time + Duration::from_millis(200), "world".to_string()),
+        ];
+        let end_time = start_time + Duration::from_millis(200);
+
+        // Simulate batched streaming where 5 output tokens arrive across 2 stream events.
+        let tokens = TokenCounts {
+            input: 8,
+            output: 5,
+            reasoning: 0,
+            total: 13,
+        };
+
+        let result = process_benchmark_data(start_time, end_time, &content_arrivals, &[], &tokens);
+
+        // Inter-event latency is based on stream event gaps.
+        assert_eq!(result.inter_event_latency_s, 0.1);
+        // Inter-token latency is based on generation window and token count.
+        // Generation window: 200ms - 100ms = 100ms. Tokens: 5 => 4 intervals.
+        assert_eq!(result.inter_token_latency_s, 0.025);
     }
 
     #[test]

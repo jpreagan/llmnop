@@ -1,6 +1,6 @@
 # llmnop
 
-CLI tool for benchmarking LLM inference endpoints (OpenAI API compatible). Measures TTFT, inter-token latency, throughput, and end-to-end latency.
+CLI tool for benchmarking LLM inference endpoints (OpenAI API compatible). Measures TTFT, TTFO, inter-token latency, inter-event latency, throughput, and end-to-end latency.
 
 ## Required CLI Flags
 
@@ -14,7 +14,8 @@ Use `--help` to show complete CLI usage and flags.
 
 - **TTFT** - Time to first token (content or reasoning)
 - **TTFO** - Time to first output token (content only, excludes reasoning)
-- **Inter-token latency** - Average gap between token arrivals (excludes TTFT)
+- **Inter-token latency** - Estimated average gap between generated tokens: generation window / (generated tokens - 1)
+- **Inter-event latency** - Average gap between streamed events/chunks
 - **Throughput** - Tokens/second over generation window (first to last token)
 
 ## Output Version
