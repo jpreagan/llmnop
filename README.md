@@ -179,10 +179,10 @@ Path layout:
 - `<results>/<benchmark_slug>/<run_id>/summary.json`
 - `<results>/<benchmark_slug>/<run_id>/individual_responses.jsonl`
 
-| File                          | Contents                                                                 |
-| ----------------------------- | ------------------------------------------------------------------------ |
-| `summary.json`                | Aggregated benchmark metrics using nested metric objects (`unit`, stats) |
-| `individual_responses.jsonl`  | Per-request records with `metadata`, `metrics`, and `error` (JSONL)      |
+| File                         | Contents                                                                 |
+| ---------------------------- | ------------------------------------------------------------------------ |
+| `summary.json`               | Aggregated benchmark metrics using nested metric objects (`unit`, stats) |
+| `individual_responses.jsonl` | Per-request records with `metadata`, `metrics`, and `error` (JSONL)      |
 
 The summary includes statistical breakdowns for latency and token metrics. `individual_responses.jsonl` stores one request record per line for efficient processing on larger runs.
 
