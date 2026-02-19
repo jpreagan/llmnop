@@ -203,7 +203,7 @@ pub struct Quantiles {
 }
 
 fn default_results_dir() -> PathBuf {
-    if let Some(project_dirs) = ProjectDirs::from("io", "jpreagan", "llmnop") {
+    if let Some(project_dirs) = ProjectDirs::from("", "", "llmnop") {
         if let Some(state_dir) = project_dirs.state_dir() {
             return state_dir.join("results");
         }

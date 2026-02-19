@@ -51,9 +51,9 @@ llmnop --url http://localhost:8000/v1 \
 
 Results print to stdout and save under the llmnop app results directory:
 
-- macOS: `~/Library/Application Support/io.jpreagan.llmnop/results`
+- macOS: `~/Library/Application Support/llmnop/results`
 - Linux: `${XDG_STATE_HOME:-~/.local/state}/llmnop/results`
-- Windows: `%LOCALAPPDATA%\\jpreagan\\llmnop\\data\\results`
+- Windows: `%LOCALAPPDATA%\\llmnop\\data\\results`
 
 ## What It Measures
 
@@ -170,9 +170,9 @@ llmnop --url http://localhost:8000/v1 --api-key token-abc123 \
 
 Each run produces two JSON files in the results directory:
 
-- macOS: `~/Library/Application Support/io.jpreagan.llmnop/results`
+- macOS: `~/Library/Application Support/llmnop/results`
 - Linux: `${XDG_STATE_HOME:-~/.local/state}/llmnop/results`
-- Windows: `%LOCALAPPDATA%\\jpreagan\\llmnop\\data\\results`
+- Windows: `%LOCALAPPDATA%\\llmnop\\data\\results`
 
 | File                                                 | Contents                               |
 | ---------------------------------------------------- | -------------------------------------- |
