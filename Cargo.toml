@@ -27,6 +27,7 @@ serde_json = "1.0.140"
 tokenizers = { version = "0.22.1", features = ["http", "rustls-tls"] }
 tokio = { version = "1.44.1", features = ["full"] }
 comfy-table = { version = "7", features = ["custom_styling"] }
+directories = "6.0.0"
 
 [features]
 self-update = ["dep:axoupdater"]

@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog,
 and this project adheres to Semantic Versioning.
 
+## [Unreleased]
+
+### Changed
+- Benchmark JSON output now always writes to the platform app data/state directory for llmnop instead of the current working directory.
+
+### Removed
+- Removed `--results-dir`; output location is now managed automatically.
+
 ## [0.8.0] - 2026-02-18
 
 ### Added

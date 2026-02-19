@@ -129,14 +129,6 @@ pub struct Args {
 
     // Output
     #[arg(
-        long,
-        default_value = "result_outputs",
-        help = "Output directory",
-        help_heading = "Output"
-    )]
-    pub results_dir: String,
-
-    #[arg(
         short = 'q',
         long,
         help = "Suppress stdout output",
