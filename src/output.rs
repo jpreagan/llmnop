@@ -2,10 +2,11 @@ use crate::benchmark::BenchmarkResult;
 use comfy_table::{
     Attribute, Cell, CellAlignment, Color, ContentArrangement, Table, presets::UTF8_FULL_CONDENSED,
 };
+use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::fs::{File, create_dir_all};
 use std::io::Write;
-use std::path::Path;
+use std::path::PathBuf;
 
 pub struct BenchmarkConfig<'a> {
     pub model: &'a str,
@@ -201,6 +202,18 @@ pub struct Quantiles {
     pub p99: f64,
 }
 
+fn default_results_dir() -> PathBuf {
+    if let Some(project_dirs) = ProjectDirs::from("io", "jpreagan", "llmnop") {
+        if let Some(state_dir) = project_dirs.state_dir() {
+            return state_dir.join("results");
+        }
+        return project_dirs.data_local_dir().join("results");
+    }
+
+    // Keep a local fallback for unusual environments that do not expose user dirs.
+    PathBuf::from("result_outputs")
+}
+
 pub fn print_summary_to_stdout(
     successful_results: &[BenchmarkResult],
     num_errors: usize,
@@ -369,16 +382,13 @@ pub fn print_summary_to_stdout(
 }
 
 pub fn write_results_json(
-    results_dir: &str,
     config: &BenchmarkConfig,
     all_results: &[Result<BenchmarkResult, String>],
     total_start_time: std::time::Instant,
     total_end_time: std::time::Instant,
 ) -> std::io::Result<()> {
-    if results_dir.is_empty() {
-        return Ok(());
-    }
-    create_dir_all(results_dir)?;
+    let results_dir = default_results_dir();
+    create_dir_all(&results_dir)?;
 
     let mut individual_responses = Vec::with_capacity(all_results.len());
     let mut total_output_tokens = 0_u64;
@@ -440,7 +450,7 @@ pub fn write_results_json(
             output_tokens_str
         );
 
-        let path = Path::new(results_dir).join(file_name);
+        let path = results_dir.join(file_name);
         let mut f = File::create(&path)?;
         let resp_json = serde_json::to_string_pretty(&individual_responses)?;
         f.write_all(resp_json.as_bytes())?;
@@ -457,7 +467,7 @@ pub fn write_results_json(
             config.mean_input_tokens,
             output_tokens_str
         );
-        let summary_path = Path::new(results_dir).join(summary_filename);
+        let summary_path = results_dir.join(summary_filename);
 
         let flattened = build_flattened_summary(
             config,

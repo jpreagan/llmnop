@@ -49,7 +49,11 @@ llmnop --url http://localhost:8000/v1 \
   --mean-output-tokens 150
 ```
 
-Results print to stdout and save to `result_outputs/`.
+Results print to stdout and save under the llmnop app results directory:
+
+- macOS: `~/Library/Application Support/io.jpreagan.llmnop/results`
+- Linux: `${XDG_STATE_HOME:-~/.local/state}/llmnop/results`
+- Windows: `%LOCALAPPDATA%\\jpreagan\\llmnop\\data\\results`
 
 ## What It Measures
 
@@ -114,10 +118,9 @@ Use `--use-server-token-count` when you trust the server's token counts and want
 
 ### Output
 
-| Flag            | Default        | Description                |
-| --------------- | -------------- | -------------------------- |
-| `--results-dir` | result_outputs | Where to save JSON results |
-| `--quiet`, `-q` | false          | Suppress stdout output     |
+| Flag            | Default | Description            |
+| --------------- | ------- | ---------------------- |
+| `--quiet`, `-q` | false   | Suppress stdout output |
 
 ## Examples
 
@@ -166,6 +169,10 @@ llmnop --url http://localhost:8000/v1 --api-key token-abc123 \
 ## Output Files
 
 Each run produces two JSON files in the results directory:
+
+- macOS: `~/Library/Application Support/io.jpreagan.llmnop/results`
+- Linux: `${XDG_STATE_HOME:-~/.local/state}/llmnop/results`
+- Windows: `%LOCALAPPDATA%\\jpreagan\\llmnop\\data\\results`
 
 | File                                                 | Contents                               |
 | ---------------------------------------------------- | -------------------------------------- |

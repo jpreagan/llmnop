@@ -244,12 +244,6 @@ async fn main() -> Result<()> {
         num_concurrent_requests: args.num_concurrent_requests,
     };
 
-    write_results_json(
-        &args.results_dir,
-        &config,
-        &all_results,
-        overall_start,
-        overall_end,
-    )?;
+    write_results_json(&config, &all_results, overall_start, overall_end)?;
     Ok(())
 }
