@@ -40,4 +40,6 @@ Use `--help` to show complete CLI usage and flags.
 
 ## Changelog
 
-User-facing changes only. Categories: Enhancements, Bug fixes, Documentation, Configuration, Performance.
+Use Keep a Changelog format. User-facing changes only.
+
+Sections: Added, Changed, Deprecated, Removed, Fixed, Security.
