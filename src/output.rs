@@ -5,7 +5,7 @@ use comfy_table::{
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::fs::{File, create_dir_all};
-use std::io::Write;
+use std::io::{Error, ErrorKind, Write};
 use std::path::PathBuf;
 
 pub struct BenchmarkConfig<'a> {
@@ -202,16 +202,19 @@ pub struct Quantiles {
     pub p99: f64,
 }
 
-fn default_results_dir() -> PathBuf {
-    if let Some(project_dirs) = ProjectDirs::from("", "", "llmnop") {
-        if let Some(state_dir) = project_dirs.state_dir() {
-            return state_dir.join("results");
-        }
-        return project_dirs.data_local_dir().join("results");
+fn default_results_dir() -> std::io::Result<PathBuf> {
+    let project_dirs = ProjectDirs::from("", "", "llmnop").ok_or_else(|| {
+        Error::new(
+            ErrorKind::NotFound,
+            "could not resolve platform app data directory for llmnop",
+        )
+    })?;
+
+    if let Some(state_dir) = project_dirs.state_dir() {
+        return Ok(state_dir.join("results"));
     }
 
-    // Keep a local fallback for unusual environments that do not expose user dirs.
-    PathBuf::from("result_outputs")
+    Ok(project_dirs.data_local_dir().join("results"))
 }
 
 pub fn print_summary_to_stdout(
@@ -387,7 +390,7 @@ pub fn write_results_json(
     total_start_time: std::time::Instant,
     total_end_time: std::time::Instant,
 ) -> std::io::Result<()> {
-    let results_dir = default_results_dir();
+    let results_dir = default_results_dir()?;
     create_dir_all(&results_dir)?;
 
     let mut individual_responses = Vec::with_capacity(all_results.len());
