@@ -26,6 +26,16 @@ use tokio::time;
 
 use output::{BenchmarkConfig, print_summary_to_stdout, write_results_json};
 
+fn unix_time_now_ns() -> u64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|d| u64::try_from(d.as_nanos()).ok())
+        .unwrap_or_default()
+}
+
 fn sample_max_tokens(mean: u32, stddev: u32) -> u32 {
     if stddev == 0 {
         return mean.max(1);
@@ -76,6 +86,7 @@ async fn main() -> Result<()> {
     let use_server_token_count = args.use_server_token_count;
 
     let overall_start = Instant::now();
+    let overall_start_unix_ns = unix_time_now_ns();
 
     let prompt_config = PromptConfig {
         mean_input_tokens: args.mean_input_tokens,
@@ -205,6 +216,7 @@ async fn main() -> Result<()> {
     pb.finish_and_clear();
 
     let overall_end = Instant::now();
+    let overall_end_unix_ns = unix_time_now_ns();
     if timeout_occurred {
         println!(
             "Benchmark terminated due to timeout after {} seconds.",
@@ -244,6 +256,13 @@ async fn main() -> Result<()> {
         num_concurrent_requests: args.num_concurrent_requests,
     };
 
-    write_results_json(&config, &all_results, overall_start, overall_end)?;
+    write_results_json(
+        &config,
+        &all_results,
+        overall_start,
+        overall_end,
+        overall_start_unix_ns,
+        overall_end_unix_ns,
+    )?;
     Ok(())
 }
