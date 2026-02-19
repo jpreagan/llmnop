@@ -6,7 +6,7 @@ use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::fs::{File, create_dir_all};
 use std::io::{Error, ErrorKind, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub struct BenchmarkConfig<'a> {
     pub model: &'a str,
@@ -217,6 +217,33 @@ fn default_results_dir() -> std::io::Result<PathBuf> {
     Ok(project_dirs.data_local_dir().join("results"))
 }
 
+fn benchmark_slug(config: &BenchmarkConfig) -> String {
+    let output_tokens_str = config
+        .mean_output_tokens
+        .map(|v| v.to_string())
+        .unwrap_or_else(|| "none".to_string());
+
+    format!(
+        "{}_{}_{}",
+        sanitize_filename::sanitize(config.model.replace(['/', '.'], "-")),
+        config.mean_input_tokens,
+        output_tokens_str
+    )
+}
+
+fn generate_run_id() -> std::io::Result<String> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| Error::other(format!("system clock is before UNIX_EPOCH: {e}")))?;
+    Ok(format!("{}_{:09}", now.as_secs(), now.subsec_nanos()))
+}
+
+fn run_results_dir(base_results_dir: &Path, config: &BenchmarkConfig, run_id: &str) -> PathBuf {
+    base_results_dir.join(benchmark_slug(config)).join(run_id)
+}
+
 pub fn print_summary_to_stdout(
     successful_results: &[BenchmarkResult],
     num_errors: usize,
@@ -390,8 +417,10 @@ pub fn write_results_json(
     total_start_time: std::time::Instant,
     total_end_time: std::time::Instant,
 ) -> std::io::Result<()> {
-    let results_dir = default_results_dir()?;
-    create_dir_all(&results_dir)?;
+    let base_results_dir = default_results_dir()?;
+    let run_id = generate_run_id()?;
+    let run_results_dir = run_results_dir(&base_results_dir, config, &run_id);
+    create_dir_all(&run_results_dir)?;
 
     let mut individual_responses = Vec::with_capacity(all_results.len());
     let mut total_output_tokens = 0_u64;
@@ -442,35 +471,14 @@ pub fn write_results_json(
     }
 
     {
-        let output_tokens_str = config
-            .mean_output_tokens
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "none".to_string());
-        let file_name = format!(
-            "{}_{}_{}_individual_responses.json",
-            sanitize_filename::sanitize(config.model.replace(['/', '.'], "-")),
-            config.mean_input_tokens,
-            output_tokens_str
-        );
-
-        let path = results_dir.join(file_name);
+        let path = run_results_dir.join("individual_responses.json");
         let mut f = File::create(&path)?;
         let resp_json = serde_json::to_string_pretty(&individual_responses)?;
         f.write_all(resp_json.as_bytes())?;
     }
 
     {
-        let output_tokens_str = config
-            .mean_output_tokens
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "none".to_string());
-        let summary_filename = format!(
-            "{}_{}_{}_summary.json",
-            sanitize_filename::sanitize(config.model.replace(['/', '.'], "-")),
-            config.mean_input_tokens,
-            output_tokens_str
-        );
-        let summary_path = results_dir.join(summary_filename);
+        let summary_path = run_results_dir.join("summary.json");
 
         let flattened = build_flattened_summary(
             config,
@@ -814,6 +822,7 @@ fn percentile(sorted_values: &[f64], pct: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
     fn test_percentile_calculation() {
@@ -865,5 +874,67 @@ mod tests {
         assert_eq!(empty_stats.min, 0.0);
         assert_eq!(empty_stats.max, 0.0);
         assert_eq!(empty_stats.mean, 0.0);
+    }
+
+    #[test]
+    fn test_benchmark_slug() {
+        let config = BenchmarkConfig {
+            model: "qwen/qwen3-4b-2507",
+            tokenizer: "Qwen/Qwen3-4B",
+            mean_input_tokens: 550,
+            stddev_input_tokens: 0,
+            mean_output_tokens: Some(150),
+            stddev_output_tokens: 0,
+            num_concurrent_requests: 1,
+        };
+
+        assert_eq!(benchmark_slug(&config), "qwen-qwen3-4b-2507_550_150");
+    }
+
+    #[test]
+    fn test_benchmark_slug_without_output_tokens() {
+        let config = BenchmarkConfig {
+            model: "qwen/qwen3-4b-2507",
+            tokenizer: "Qwen/Qwen3-4B",
+            mean_input_tokens: 550,
+            stddev_input_tokens: 0,
+            mean_output_tokens: None,
+            stddev_output_tokens: 0,
+            num_concurrent_requests: 1,
+        };
+
+        assert_eq!(benchmark_slug(&config), "qwen-qwen3-4b-2507_550_none");
+    }
+
+    #[test]
+    fn test_generate_run_id_format() {
+        let run_id = generate_run_id().unwrap();
+        let mut parts = run_id.split('_');
+        let secs = parts.next().unwrap();
+        let nanos = parts.next().unwrap();
+
+        assert!(parts.next().is_none());
+        assert_eq!(secs.len(), 10);
+        assert_eq!(nanos.len(), 9);
+        assert!(secs.chars().all(|c| c.is_ascii_digit()));
+        assert!(nanos.chars().all(|c| c.is_ascii_digit()));
+    }
+
+    #[test]
+    fn test_run_results_dir_layout() {
+        let config = BenchmarkConfig {
+            model: "qwen/qwen3-4b-2507",
+            tokenizer: "Qwen/Qwen3-4B",
+            mean_input_tokens: 550,
+            stddev_input_tokens: 0,
+            mean_output_tokens: Some(150),
+            stddev_output_tokens: 0,
+            num_concurrent_requests: 1,
+        };
+        let path = run_results_dir(Path::new("/tmp/results"), &config, "1700000000_123456789");
+        assert_eq!(
+            path,
+            PathBuf::from("/tmp/results/qwen-qwen3-4b-2507_550_150/1700000000_123456789")
+        );
     }
 }
