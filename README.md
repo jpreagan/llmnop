@@ -57,11 +57,17 @@ Results print to stdout and save to `result_outputs/`.
 | ----------------------- | --------------------------------------------------------------- |
 | **TTFT**                | Time to first token - how long until streaming begins           |
 | **TTFO**                | Time to first output token - excludes reasoning/thinking tokens |
-| **Inter-token latency** | Average gap between tokens during generation                    |
+| **Inter-token latency** | Estimated average time between generated tokens                 |
+| **Inter-event latency** | Average gap between streamed events/chunks                      |
 | **Throughput**          | Tokens per second during the generation window                  |
 | **End-to-end latency**  | Total request time from start to finish                         |
 
-For reasoning models, TTFT includes thinking tokens. TTFO measures time until actual output begins, giving you the user-perceived latency.
+### Notes
+
+- For reasoning models, TTFT includes thinking tokens.
+- TTFO measures time until actual output begins, so it better reflects user-perceived latency.
+- Inter-event latency captures stream chunk cadence.
+- Inter-token latency is token-count based and less sensitive to chunk batching.
 
 ## Configuration
 

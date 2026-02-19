@@ -28,6 +28,9 @@ pub struct IndividualResponse {
     #[serde(rename = "inter_token_latency_s")]
     pub inter_token_latency_s: Option<f64>,
 
+    #[serde(rename = "inter_event_latency_s")]
+    pub inter_event_latency_s: Option<f64>,
+
     #[serde(rename = "ttft_s")]
     pub ttft_s: Option<f64>,
 
@@ -77,6 +80,17 @@ pub struct BenchmarkSummary {
     pub results_inter_token_latency_s_min: f64,
     pub results_inter_token_latency_s_max: f64,
     pub results_inter_token_latency_s_stddev: f64,
+
+    pub results_inter_event_latency_s_quantiles_p25: f64,
+    pub results_inter_event_latency_s_quantiles_p50: f64,
+    pub results_inter_event_latency_s_quantiles_p75: f64,
+    pub results_inter_event_latency_s_quantiles_p90: f64,
+    pub results_inter_event_latency_s_quantiles_p95: f64,
+    pub results_inter_event_latency_s_quantiles_p99: f64,
+    pub results_inter_event_latency_s_mean: f64,
+    pub results_inter_event_latency_s_min: f64,
+    pub results_inter_event_latency_s_max: f64,
+    pub results_inter_event_latency_s_stddev: f64,
 
     pub results_ttft_s_quantiles_p25: f64,
     pub results_ttft_s_quantiles_p50: f64,
@@ -198,6 +212,7 @@ pub fn print_summary_to_stdout(
     let total_time_s = end_time.duration_since(start_time).as_secs_f64();
 
     let mut inter_token_vec = Vec::new();
+    let mut inter_event_vec = Vec::new();
     let mut ttft_vec = Vec::new();
     let mut ttfo_vec = Vec::new();
     let mut e2e_vec = Vec::new();
@@ -209,6 +224,7 @@ pub fn print_summary_to_stdout(
 
     for br in successful_results {
         inter_token_vec.push(br.inter_token_latency_s);
+        inter_event_vec.push(br.inter_event_latency_s);
         ttft_vec.push(br.ttft.as_secs_f64());
         if let Some(ttfo) = br.ttfo {
             ttfo_vec.push(ttfo.as_secs_f64());
@@ -222,6 +238,7 @@ pub fn print_summary_to_stdout(
     }
 
     let inter_stats = compute_stats_for_flatten(&inter_token_vec);
+    let inter_event_stats = compute_stats_for_flatten(&inter_event_vec);
     let ttft_stats = compute_stats_for_flatten(&ttft_vec);
     let ttfo_stats = compute_stats_for_flatten(&ttfo_vec);
     let e2e_stats = compute_stats_for_flatten(&e2e_vec);
@@ -285,6 +302,12 @@ pub fn print_summary_to_stdout(
     }
 
     add_row(&mut table, "Inter Token Latency (ms)", &inter_stats, fmt_ms);
+    add_row(
+        &mut table,
+        "Inter Event Latency (ms)",
+        &inter_event_stats,
+        fmt_ms,
+    );
     add_row(&mut table, "Time to First Token (ms)", &ttft_stats, fmt_ms);
     if !ttfo_vec.is_empty() {
         add_row(
@@ -373,6 +396,7 @@ pub fn write_results_json(
                     error_code: None,
                     error_msg: "".to_string(),
                     inter_token_latency_s: Some(br.inter_token_latency_s),
+                    inter_event_latency_s: Some(br.inter_event_latency_s),
                     ttft_s: Some(br.ttft.as_secs_f64()),
                     ttfo_s: br.ttfo.map(|d| d.as_secs_f64()),
                     end_to_end_latency_s: Some(br.total_latency.as_secs_f64()),
@@ -389,6 +413,7 @@ pub fn write_results_json(
                     error_code: Some(1),
                     error_msg: msg.clone(),
                     inter_token_latency_s: None,
+                    inter_event_latency_s: None,
                     ttft_s: None,
                     ttfo_s: None,
                     end_to_end_latency_s: None,
@@ -469,6 +494,7 @@ fn build_flattened_summary(
     let total_time_s = end_time.duration_since(start_time).as_secs_f64();
 
     let mut inter_token_vec = Vec::new();
+    let mut inter_event_vec = Vec::new();
     let mut ttft_vec = Vec::new();
     let mut ttfo_vec = Vec::new();
     let mut e2e_vec = Vec::new();
@@ -480,6 +506,7 @@ fn build_flattened_summary(
 
     for br in successful_results {
         inter_token_vec.push(br.inter_token_latency_s);
+        inter_event_vec.push(br.inter_event_latency_s);
         ttft_vec.push(br.ttft.as_secs_f64());
         if let Some(ttfo) = br.ttfo {
             ttfo_vec.push(ttfo.as_secs_f64());
@@ -493,6 +520,7 @@ fn build_flattened_summary(
     }
 
     let inter_stats = compute_stats_for_flatten(&inter_token_vec);
+    let inter_event_stats = compute_stats_for_flatten(&inter_event_vec);
     let ttft_stats = compute_stats_for_flatten(&ttft_vec);
     let ttfo_stats = compute_stats_for_flatten(&ttfo_vec);
     let e2e_stats = compute_stats_for_flatten(&e2e_vec);
@@ -566,7 +594,7 @@ fn build_flattened_summary(
         .unwrap_or_else(|| "none".to_string());
 
     BenchmarkSummary {
-        version: "2026-01-20".to_string(),
+        version: "2026-02-19".to_string(),
         name: format!(
             "{}_{}_{}_summary",
             sanitize_filename::sanitize(config.model.replace(['/', '.'], "-")),
@@ -593,6 +621,17 @@ fn build_flattened_summary(
         results_inter_token_latency_s_min: inter_stats.min,
         results_inter_token_latency_s_max: inter_stats.max,
         results_inter_token_latency_s_stddev: inter_stats.stddev,
+
+        results_inter_event_latency_s_quantiles_p25: inter_event_stats.quantiles.p25,
+        results_inter_event_latency_s_quantiles_p50: inter_event_stats.quantiles.p50,
+        results_inter_event_latency_s_quantiles_p75: inter_event_stats.quantiles.p75,
+        results_inter_event_latency_s_quantiles_p90: inter_event_stats.quantiles.p90,
+        results_inter_event_latency_s_quantiles_p95: inter_event_stats.quantiles.p95,
+        results_inter_event_latency_s_quantiles_p99: inter_event_stats.quantiles.p99,
+        results_inter_event_latency_s_mean: inter_event_stats.mean,
+        results_inter_event_latency_s_min: inter_event_stats.min,
+        results_inter_event_latency_s_max: inter_event_stats.max,
+        results_inter_event_latency_s_stddev: inter_event_stats.stddev,
 
         results_ttft_s_quantiles_p25: ttft_stats.quantiles.p25,
         results_ttft_s_quantiles_p50: ttft_stats.quantiles.p50,
