@@ -4,11 +4,11 @@
 
 ### Enhancements
 
-- Split streaming cadence and token cadence metrics: `inter_token_latency` is now token-count-based (robust to batched stream events), and new `inter_event_latency` reports per-event gaps.
+- Split streaming cadence and token cadence metrics: `inter_token_latency` is now token-count-based (robust to batched stream events), and new `inter_event_latency` reports per-event gaps. ([#47](https://github.com/jpreagan/llmnop/pull/47))
 
 ### Documentation
 
-- Clarify metric semantics for inter-token vs inter-event latency in README.
+- Clarify metric semantics for inter-token vs inter-event latency in README. ([#47](https://github.com/jpreagan/llmnop/pull/47))
 
 ## 0.7.1
 
