@@ -168,18 +168,23 @@ llmnop --url http://localhost:8000/v1 --api-key token-abc123 \
 
 ## Output Files
 
-Each run produces two JSON files in the results directory:
+Each run writes artifacts to a per-run directory:
 
 - macOS: `~/Library/Application Support/llmnop/results`
 - Linux: `${XDG_STATE_HOME:-~/.local/state}/llmnop/results`
 - Windows: `%LOCALAPPDATA%\\llmnop\\data\\results`
 
-| File                                                 | Contents                               |
-| ---------------------------------------------------- | -------------------------------------- |
-| `{model}_{input}_{output}_summary.json`              | Aggregated statistics with percentiles |
-| `{model}_{input}_{output}_individual_responses.json` | Per-request timing data                |
+Path layout:
 
-The summary includes full statistical breakdowns (p25/p50/p75/p90/p95/p99, mean, min, max, stddev) for all metrics. Individual responses let you analyze distributions or identify outliers.
+- `<results>/<benchmark_slug>/<run_id>/summary.json`
+- `<results>/<benchmark_slug>/<run_id>/individual_responses.jsonl`
+
+| File                          | Contents                                                                 |
+| ----------------------------- | ------------------------------------------------------------------------ |
+| `summary.json`                | Aggregated benchmark metrics using nested metric objects (`unit`, stats) |
+| `individual_responses.jsonl`  | Per-request records with `metadata`, `metrics`, and `error` (JSONL)      |
+
+The summary includes statistical breakdowns for latency and token metrics. `individual_responses.jsonl` stores one request record per line for efficient processing on larger runs.
 
 ## License
 

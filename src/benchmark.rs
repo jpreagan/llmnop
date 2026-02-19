@@ -22,6 +22,8 @@ pub struct BenchmarkResult {
     pub inter_token_latency_s: f64,
     pub inter_event_latency_s: f64,
     pub total_tokens: u32,
+    pub request_start_unix_ns: u64,
+    pub request_end_unix_ns: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -55,6 +57,7 @@ async fn run_chat_benchmark(
     client: &Client<OpenAIConfig>,
     request: &BenchmarkRequest,
 ) -> Result<BenchmarkResult> {
+    let request_start_unix_ns = unix_time_now_ns();
     let start_time = Instant::now();
     let mut content_arrivals: Vec<(Instant, String)> = Vec::new();
     let mut reasoning_arrivals: Vec<(Instant, String)> = Vec::new();
@@ -99,6 +102,7 @@ async fn run_chat_benchmark(
     }
 
     let end_time = Instant::now();
+    let request_end_unix_ns = unix_time_now_ns();
 
     let usage_counts = usage.as_ref().map(token_counts_from_chat_usage);
     let token_counts = resolve_token_counts(
@@ -110,12 +114,14 @@ async fn run_chat_benchmark(
         &request.tokenizer,
     )?;
 
-    Ok(process_benchmark_data(
+    Ok(process_benchmark_data_with_timestamps(
         start_time,
         end_time,
         &content_arrivals,
         &reasoning_arrivals,
         &token_counts,
+        request_start_unix_ns,
+        request_end_unix_ns,
     ))
 }
 
@@ -123,6 +129,7 @@ async fn run_responses_benchmark(
     client: &Client<OpenAIConfig>,
     request: &BenchmarkRequest,
 ) -> Result<BenchmarkResult> {
+    let request_start_unix_ns = unix_time_now_ns();
     let start_time = Instant::now();
     let mut content_arrivals: Vec<(Instant, String)> = Vec::new();
     let mut reasoning_arrivals: Vec<(Instant, String)> = Vec::new();
@@ -166,6 +173,7 @@ async fn run_responses_benchmark(
     }
 
     let end_time = Instant::now();
+    let request_end_unix_ns = unix_time_now_ns();
 
     let usage_counts = usage.as_ref().and_then(token_counts_from_responses_usage);
     let token_counts = resolve_token_counts(
@@ -177,12 +185,14 @@ async fn run_responses_benchmark(
         &request.tokenizer,
     )?;
 
-    Ok(process_benchmark_data(
+    Ok(process_benchmark_data_with_timestamps(
         start_time,
         end_time,
         &content_arrivals,
         &reasoning_arrivals,
         &token_counts,
+        request_start_unix_ns,
+        request_end_unix_ns,
     ))
 }
 
@@ -258,12 +268,33 @@ fn compute_token_counts(
     })
 }
 
+#[cfg(test)]
 fn process_benchmark_data(
     start_time: Instant,
     end_time: Instant,
     content_arrivals: &[(Instant, String)],
     reasoning_arrivals: &[(Instant, String)],
     tokens: &TokenCounts,
+) -> BenchmarkResult {
+    process_benchmark_data_with_timestamps(
+        start_time,
+        end_time,
+        content_arrivals,
+        reasoning_arrivals,
+        tokens,
+        0,
+        0,
+    )
+}
+
+fn process_benchmark_data_with_timestamps(
+    start_time: Instant,
+    end_time: Instant,
+    content_arrivals: &[(Instant, String)],
+    reasoning_arrivals: &[(Instant, String)],
+    tokens: &TokenCounts,
+    request_start_unix_ns: u64,
+    request_end_unix_ns: u64,
 ) -> BenchmarkResult {
     let first_content_time = content_arrivals.first().map(|(t, _)| *t);
     let first_reasoning_time = reasoning_arrivals.first().map(|(t, _)| *t);
@@ -340,7 +371,19 @@ fn process_benchmark_data(
         inter_token_latency_s,
         inter_event_latency_s,
         total_tokens: tokens.total,
+        request_start_unix_ns,
+        request_end_unix_ns,
     }
+}
+
+fn unix_time_now_ns() -> u64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|d| u64::try_from(d.as_nanos()).ok())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
