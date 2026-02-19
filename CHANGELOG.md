@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on Keep a Changelog,
 and this project adheres to Semantic Versioning.
 
-## [Unreleased]
+## [0.8.0] - 2026-02-18
 
 ### Added
 - `inter_event_latency` metric for streamed event/chunk cadence. ([#47](https://github.com/jpreagan/llmnop/pull/47))
