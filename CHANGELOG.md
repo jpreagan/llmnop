@@ -1,108 +1,87 @@
 # Changelog
 
-## Unreleased
+All notable changes to this project will be documented in this file.
 
-### Enhancements
+The format is based on Keep a Changelog,
+and this project adheres to Semantic Versioning.
 
-- Split streaming cadence and token cadence metrics: `inter_token_latency` is now token-count-based (robust to batched stream events), and new `inter_event_latency` reports per-event gaps. ([#47](https://github.com/jpreagan/llmnop/pull/47))
+## [Unreleased]
 
-### Documentation
+### Added
+- `inter_event_latency` metric for streamed event/chunk cadence. ([#47](https://github.com/jpreagan/llmnop/pull/47))
 
-- Clarify metric semantics for inter-token vs inter-event latency in README. ([#47](https://github.com/jpreagan/llmnop/pull/47))
+### Changed
+- `inter_token_latency` is now token-count-based (robust to batched stream events). ([#47](https://github.com/jpreagan/llmnop/pull/47))
+- Clarified inter-token vs inter-event metric semantics in the README. ([#47](https://github.com/jpreagan/llmnop/pull/47))
 
-## 0.7.1
+## [0.7.1]
 
-Released on 2026-01-26.
+### Added
+- `llmnop update` command for standalone installs. ([#44](https://github.com/jpreagan/llmnop/pull/44))
 
-### Enhancements
+## [0.7.0]
 
-- Add `llmnop update` command for standalone installs. ([#44](https://github.com/jpreagan/llmnop/pull/44))
+### Added
+- `-q`/`--quiet` flag to suppress stdout output. ([#35](https://github.com/jpreagan/llmnop/pull/35))
+- Optional `--api-key` support for unauthenticated servers. ([#38](https://github.com/jpreagan/llmnop/pull/38))
 
-## 0.7.0
+### Removed
+- `--no-progress`; use `--quiet` to suppress progress output. ([#37](https://github.com/jpreagan/llmnop/pull/37))
 
-Released on 2026-01-25
+## [0.6.0]
 
-### Enhancements
+### Added
+- Responses API support via `--api`, with CLI-configured `--url` and `--api-key`. ([#27](https://github.com/jpreagan/llmnop/pull/27))
+- `--use-server-token-count` to use API-reported usage for token metrics. ([#30](https://github.com/jpreagan/llmnop/pull/30))
 
-- Add `-q`/`--quiet` flag to suppress stdout output. ([#35](https://github.com/jpreagan/llmnop/pull/35))
-- Make `--api-key` optional for unauthenticated servers. ([#38](https://github.com/jpreagan/llmnop/pull/38))
+### Changed
+- Improved startup latency by parallelizing corpus tokenization. ([#32](https://github.com/jpreagan/llmnop/pull/32))
 
-### Configuration
+## [0.5.0]
 
-- Remove `--no-progress`; use `--quiet` to suppress progress output. ([#37](https://github.com/jpreagan/llmnop/pull/37))
-
-## 0.6.0
-
-Released on 2026-01-18
-
-### Performance
-
-- Reduce startup latency by parallelizing corpus tokenization. ([#32](https://github.com/jpreagan/llmnop/pull/32))
-
-### Enhancements
-
-- Add Responses API support with `--api` plus CLI-configured `--url` and `--api-key`. ([#27](https://github.com/jpreagan/llmnop/pull/27))
-- Add `--use-server-token-count` to use API-reported usage for token metrics. ([#30](https://github.com/jpreagan/llmnop/pull/30))
-
-## 0.5.0
-
-Released on 2026-01-13
-
-### Performance
-
-- Faster prompt generation via tokenize-once caching. ([#23](https://github.com/jpreagan/llmnop/pull/23))
-
-### Enhancements
-
+### Added
 - Precise token targeting (token-level sampling replaces line-level). ([#23](https://github.com/jpreagan/llmnop/pull/23))
 - Per-request `max_tokens` sampling when `--mean-output-tokens` is specified. ([#23](https://github.com/jpreagan/llmnop/pull/23))
-- Expanded Shakespeare corpus supports larger input token requests. ([#23](https://github.com/jpreagan/llmnop/pull/23))
-- Updated defaults: `--stddev-input-tokens` and `--stddev-output-tokens` now 0, `--max-num-completed-requests` now 10. ([#23](https://github.com/jpreagan/llmnop/pull/23))
+- Expanded Shakespeare corpus to support larger input token requests. ([#23](https://github.com/jpreagan/llmnop/pull/23))
 
-## 0.4.0
+### Changed
+- Faster prompt generation via tokenize-once caching. ([#23](https://github.com/jpreagan/llmnop/pull/23))
+- Updated defaults: `--stddev-input-tokens=0`, `--stddev-output-tokens=0`, `--max-num-completed-requests=10`. ([#23](https://github.com/jpreagan/llmnop/pull/23))
 
-Released on 2026-01-04
+## [0.4.0]
 
-### Enhancements
+### Added
+- Reasoning-model support with correct token counts, throughput, and latency metrics. ([#16](https://github.com/jpreagan/llmnop/pull/16))
+- `--mean-output-tokens` can be omitted (default: none) to avoid constraining output length. ([#16](https://github.com/jpreagan/llmnop/pull/16))
 
-- Support reasoning models with correct token counts, throughput, and latency metrics. ([#16](https://github.com/jpreagan/llmnop/pull/16))
-- Add `--mean-output-tokens` as optional (default: none) to avoid constraining model output. ([#16](https://github.com/jpreagan/llmnop/pull/16))
+### Fixed
+- Per-request output throughput now uses generation window (first streamed token to last streamed token), not full request wall time. ([#15](https://github.com/jpreagan/llmnop/pull/15))
 
-### Bug fixes
+## [0.3.1]
 
-- Compute per-request output throughput over the generation window (first streamed token → last streamed token), rather than full request wall time. ([#15](https://github.com/jpreagan/llmnop/pull/15))
+### Added
+- `--no-progress` flag for non-interactive environments. ([#9](https://github.com/jpreagan/llmnop/pull/9))
 
-## 0.3.1
+## [0.3.0]
 
-Released on 2025-10-31
+### Added
+- `--tokenizer` to allow a tokenizer different from served model; `tokenizer` field in summary JSON and schema bump to `2025-10-05`. ([#1](https://github.com/jpreagan/llmnop/pull/1))
+- Installer script and Homebrew formula; default install respects `$XDG_BIN_HOME` (or `~/.local/bin`). ([#2](https://github.com/jpreagan/llmnop/pull/2))
 
-### Enhancements
+### Changed
+- Default `--max-num-completed-requests` increased to `2`. ([#3](https://github.com/jpreagan/llmnop/pull/3))
+- `tokenizers` built with `rustls-tls` (drops OpenSSL dependency). ([#4](https://github.com/jpreagan/llmnop/pull/4))
 
-- `--no-progress` CLI flag to disable the progress bar for non-interactive environments. ([#9](https://github.com/jpreagan/llmnop/pull/9))
+## [0.2.0]
 
-## 0.3.0
+### Added
+- Benchmark summary output.
+- Flattened benchmark-results JSON.
 
-Released on 2025-10-27.
+### Changed
+- Upgraded to Rust 2024 edition (MSRV v1.85).
 
-### Enhancements
+## [0.1.0]
 
-- Allow different tokenizer than served model via `--tokenizer`; write `tokenizer` to summary JSON and bump schema to `2025-10-05`. ([#1](https://github.com/jpreagan/llmnop/pull/1))
-- Add shell installer + Homebrew formula; default install now respects `$XDG_BIN_HOME` (or `~/.local/bin`). ([#2](https://github.com/jpreagan/llmnop/pull/2))
-- Increase default `--max-num-completed-requests` to 2. ([#3](https://github.com/jpreagan/llmnop/pull/3))
-- Build `tokenizers` with `rustls-tls` (drops OpenSSL dependency). ([#4](https://github.com/jpreagan/llmnop/pull/4))
-
-## 0.2.0
-
-Released on 2025-07-12.
-
-### Enhancements
-
-- Upgrade to Rust 2024 edition (MSRV v1.85).
-- Add benchmark summary output.
-- Flatten benchmark-results JSON.
-
-## 0.1.0
-
-Released on 2025-07-09.
-
-Initial release.
+### Added
+- Initial release.
