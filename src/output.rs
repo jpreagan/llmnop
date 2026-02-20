@@ -589,7 +589,7 @@ fn build_summary(
         .collect();
 
     BenchmarkSummary {
-        version: "2026-02-19-nested-json".to_string(),
+        version: "2026-02-19".to_string(),
         schema_version: "2.0".to_string(),
         llmnop_version: env!("CARGO_PKG_VERSION").to_string(),
         benchmark_id: run_id.to_string(),

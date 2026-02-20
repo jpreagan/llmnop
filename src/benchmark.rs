@@ -152,6 +152,7 @@ async fn run_responses_benchmark(
                 }
             }
             ResponsesStreamEvent::ReasoningTextDelta { delta: Some(text) }
+            | ResponsesStreamEvent::ReasoningSummaryTextDelta { delta: Some(text) }
             | ResponsesStreamEvent::ReasoningDelta { delta: Some(text) } => {
                 if !text.is_empty() {
                     reasoning_arrivals.push((now, text.clone()));
