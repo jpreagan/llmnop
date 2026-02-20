@@ -12,6 +12,10 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Benchmark results are now written to per-run subdirectories to avoid overwriting repeated runs with the same configuration. ([#52](https://github.com/jpreagan/llmnop/pull/52))
 - Summary JSON now uses nested metric objects, and run artifacts are written as `summary.json` and `individual_responses.jsonl`. ([#53](https://github.com/jpreagan/llmnop/pull/53))
 
+### Fixed
+
+- Responses API benchmarking now handles Ollama `response.reasoning_summary_text.delta` stream events so TTFT/inter-event and reasoning token metrics are populated correctly. ([#54](https://github.com/jpreagan/llmnop/pull/54))
+
 ### Removed
 
 - Removed `--results-dir`; output location is now managed automatically. ([#51](https://github.com/jpreagan/llmnop/pull/51))

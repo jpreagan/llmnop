@@ -40,6 +40,11 @@ pub enum ResponsesStreamEvent {
         #[serde(default, alias = "text")]
         delta: Option<String>,
     },
+    #[serde(rename = "response.reasoning_summary_text.delta")]
+    ReasoningSummaryTextDelta {
+        #[serde(default, alias = "text")]
+        delta: Option<String>,
+    },
     #[serde(rename = "response.reasoning.delta")]
     ReasoningDelta {
         #[serde(default, alias = "text")]
@@ -198,6 +203,21 @@ mod tests {
 
         match event {
             ResponsesStreamEvent::ReasoningTextDelta { delta } => {
+                assert_eq!(delta.as_deref(), Some("thinking"));
+            }
+            _ => panic!("unexpected event variant"),
+        }
+    }
+
+    #[test]
+    fn test_reasoning_summary_text_delta_deserialize() {
+        let event: ResponsesStreamEvent = serde_json::from_str(
+            r#"{"type":"response.reasoning_summary_text.delta","delta":"thinking"}"#,
+        )
+        .expect("deserialize event");
+
+        match event {
+            ResponsesStreamEvent::ReasoningSummaryTextDelta { delta } => {
                 assert_eq!(delta.as_deref(), Some("thinking"));
             }
             _ => panic!("unexpected event variant"),
