@@ -118,9 +118,11 @@ Use `--use-server-token-count` when you trust the server's token counts and want
 
 ### Output
 
-| Flag            | Default | Description            |
-| --------------- | ------- | ---------------------- |
-| `--quiet`, `-q` | false   | Suppress stdout output |
+| Flag              | Default | Description                                      |
+| ----------------- | ------- | ------------------------------------------------ |
+| `--json`          | false   | Emit benchmark summary JSON to stdout            |
+| `--output-format` | `table` | Stdout output format: `table`, `json`, or `none` |
+| `--quiet`, `-q`   | false   | Suppress stdout output (`--output-format none`)  |
 
 ## Examples
 
@@ -146,6 +148,15 @@ llmnop --url http://localhost:8000/v1 --api-key token-abc123 \
 ```bash
 llmnop --api responses --url http://localhost:8000/v1 --api-key token-abc123 \
   --model openai/gpt-oss-120b
+```
+
+**JSON stdout for `jq` pipelines:**
+
+```bash
+llmnop --url http://localhost:8000/v1 --api-key token-abc123 \
+  --model Qwen/Qwen3-4B-Instruct-2507 \
+  --output-format json \
+  --max-num-completed-requests 1 | jq '.request_latency.p99'
 ```
 
 **Custom tokenizer when model name doesn't match Hugging Face:**

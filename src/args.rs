@@ -11,6 +11,13 @@ pub enum ApiType {
     Responses,
 }
 
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
+pub enum OutputFormat {
+    Table,
+    Json,
+    None,
+}
+
 #[cfg(feature = "self-update")]
 #[derive(Debug, Subcommand)]
 pub enum Command {
@@ -129,9 +136,25 @@ pub struct Args {
 
     // Output
     #[arg(
+        long,
+        value_enum,
+        default_value = "table",
+        help = "Stdout output format",
+        help_heading = "Output"
+    )]
+    pub output_format: OutputFormat,
+
+    #[arg(
+        long,
+        help = "Emit benchmark summary JSON to stdout (alias for --output-format json)",
+        help_heading = "Output"
+    )]
+    pub json: bool,
+
+    #[arg(
         short = 'q',
         long,
-        help = "Suppress stdout output",
+        help = "Suppress stdout output (alias for --output-format none)",
         help_heading = "Output"
     )]
     pub quiet: bool,
@@ -155,6 +178,16 @@ impl Args {
             ErrorKind::MissingRequiredArgument,
             format!("the following required argument was not provided: {arg}"),
         )
+    }
+
+    pub fn effective_output_format(&self) -> OutputFormat {
+        if self.quiet {
+            OutputFormat::None
+        } else if self.json {
+            OutputFormat::Json
+        } else {
+            self.output_format
+        }
     }
 }
 
@@ -232,6 +265,8 @@ mod tests {
         .expect("parse args");
 
         assert!(!args.quiet);
+        assert!(!args.json);
+        assert!(matches!(args.output_format, OutputFormat::Table));
     }
 
     #[test]
@@ -249,6 +284,7 @@ mod tests {
         .expect("parse args");
 
         assert!(args.quiet);
+        assert!(matches!(args.effective_output_format(), OutputFormat::None));
     }
 
     #[test]
@@ -266,6 +302,84 @@ mod tests {
         .expect("parse args");
 
         assert!(args.quiet);
+        assert!(matches!(args.effective_output_format(), OutputFormat::None));
+    }
+
+    #[test]
+    fn test_parse_output_format_json() {
+        let args = Args::try_parse_from([
+            "llmnop",
+            "--model",
+            "test-model",
+            "--url",
+            "http://localhost:8000/v1",
+            "--api-key",
+            "test-key",
+            "--output-format",
+            "json",
+        ])
+        .expect("parse args");
+
+        assert!(matches!(args.output_format, OutputFormat::Json));
+        assert!(matches!(args.effective_output_format(), OutputFormat::Json));
+    }
+
+    #[test]
+    fn test_parse_json_flag() {
+        let args = Args::try_parse_from([
+            "llmnop",
+            "--model",
+            "test-model",
+            "--url",
+            "http://localhost:8000/v1",
+            "--api-key",
+            "test-key",
+            "--json",
+        ])
+        .expect("parse args");
+
+        assert!(args.json);
+        assert!(matches!(args.effective_output_format(), OutputFormat::Json));
+    }
+
+    #[test]
+    fn test_quiet_overrides_output_format() {
+        let args = Args::try_parse_from([
+            "llmnop",
+            "--model",
+            "test-model",
+            "--url",
+            "http://localhost:8000/v1",
+            "--api-key",
+            "test-key",
+            "--output-format",
+            "json",
+            "--quiet",
+        ])
+        .expect("parse args");
+
+        assert!(matches!(args.output_format, OutputFormat::Json));
+        assert!(matches!(args.effective_output_format(), OutputFormat::None));
+    }
+
+    #[test]
+    fn test_quiet_overrides_json_flag() {
+        let args = Args::try_parse_from([
+            "llmnop",
+            "--model",
+            "test-model",
+            "--url",
+            "http://localhost:8000/v1",
+            "--api-key",
+            "test-key",
+            "--json",
+            "--quiet",
+        ])
+        .expect("parse args");
+
+        assert!(args.json);
+        assert!(args.quiet);
+        assert!(matches!(args.effective_output_format(), OutputFormat::None));
     }
 
     #[cfg(feature = "self-update")]

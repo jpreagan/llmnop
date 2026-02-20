@@ -11,6 +11,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Benchmark JSON output now always writes to the platform app data/state directory for llmnop instead of the current working directory. ([#51](https://github.com/jpreagan/llmnop/pull/51))
 - Benchmark results are now written to per-run subdirectories to avoid overwriting repeated runs with the same configuration. ([#52](https://github.com/jpreagan/llmnop/pull/52))
 - Summary JSON now uses nested metric objects, and run artifacts are written as `summary.json` and `individual_responses.jsonl`. ([#53](https://github.com/jpreagan/llmnop/pull/53))
+- Added `--output-format table|json|none` and `--json` for stdout rendering, including machine-readable JSON output for `jq` pipelines.
 
 ### Fixed
 
