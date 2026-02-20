@@ -10,7 +10,7 @@ mod tokens;
 use anyhow::Result;
 #[cfg(feature = "self-update")]
 use args::Command;
-use args::{ApiType, Args};
+use args::{ApiType, Args, OutputFormat};
 use async_openai::{Client, config::OpenAIConfig};
 use benchmark::{BenchmarkRequest, BenchmarkResult, run_benchmark};
 use clap::Parser;
@@ -104,7 +104,9 @@ async fn main() -> Result<()> {
     let mut in_flight = FuturesUnordered::new();
     let mut next_request_index = 0;
 
-    let disable_progress = args.quiet || !io::stderr().is_terminal();
+    let output_format = args.effective_output_format();
+    let disable_progress =
+        matches!(output_format, OutputFormat::None) || !io::stderr().is_terminal();
 
     let pb = if disable_progress {
         ProgressBar::hidden()
@@ -155,7 +157,10 @@ async fn main() -> Result<()> {
     loop {
         tokio::select! {
             _ = &mut timeout_future, if !timeout_occurred => {
-                println!("\nTimeout reached after {} seconds. Collecting completed results...", args.timeout);
+                eprintln!(
+                    "\nTimeout reached after {} seconds. Collecting completed results...",
+                    args.timeout
+                );
                 timeout_occurred = true;
             }
 
@@ -218,7 +223,7 @@ async fn main() -> Result<()> {
     let overall_end = Instant::now();
     let overall_end_unix_ns = unix_time_now_ns();
     if timeout_occurred {
-        println!(
+        eprintln!(
             "Benchmark terminated due to timeout after {} seconds.",
             args.timeout
         );
@@ -235,17 +240,6 @@ async fn main() -> Result<()> {
         successful_results.push(br.clone());
     }
 
-    if !args.quiet {
-        print_summary_to_stdout(
-            &successful_results,
-            num_errors,
-            total_output_tokens,
-            total_reasoning_tokens,
-            overall_start,
-            overall_end,
-        );
-    }
-
     let config = BenchmarkConfig {
         model: &model,
         tokenizer: &tokenizer,
@@ -256,7 +250,7 @@ async fn main() -> Result<()> {
         num_concurrent_requests: args.num_concurrent_requests,
     };
 
-    write_results_json(
+    let written_results = write_results_json(
         &config,
         &all_results,
         overall_start,
@@ -264,5 +258,22 @@ async fn main() -> Result<()> {
         overall_start_unix_ns,
         overall_end_unix_ns,
     )?;
+
+    match output_format {
+        OutputFormat::Table => {
+            print_summary_to_stdout(
+                &successful_results,
+                num_errors,
+                total_output_tokens,
+                total_reasoning_tokens,
+                overall_start,
+                overall_end,
+            );
+        }
+        OutputFormat::Json => {
+            println!("{}", serde_json::to_string(&written_results.summary)?);
+        }
+        OutputFormat::None => {}
+    }
     Ok(())
 }

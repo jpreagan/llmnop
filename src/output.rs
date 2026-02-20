@@ -20,6 +20,10 @@ pub struct BenchmarkConfig<'a> {
     pub num_concurrent_requests: u32,
 }
 
+pub struct WrittenResults {
+    pub summary: BenchmarkSummary,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SummaryInputConfig {
     pub model: String,
@@ -375,7 +379,7 @@ pub fn write_results_json(
     total_end_time: std::time::Instant,
     start_time_unix_ns: u64,
     end_time_unix_ns: u64,
-) -> std::io::Result<()> {
+) -> std::io::Result<WrittenResults> {
     let base_results_dir = default_results_dir()?;
     let run_id = generate_run_id()?;
     let run_results_dir = run_results_dir(&base_results_dir, config, &run_id);
@@ -484,29 +488,29 @@ pub fn write_results_json(
         }
     }
 
+    let summary = build_summary(
+        &run_id,
+        config,
+        &successful_results,
+        all_results.len(),
+        total_input_tokens,
+        total_output_tokens,
+        total_reasoning_tokens,
+        &error_counts_by_message,
+        total_start_time,
+        total_end_time,
+        start_time_unix_ns,
+        end_time_unix_ns,
+    );
+
     {
         let summary_path = run_results_dir.join("summary.json");
-        let summary = build_summary(
-            &run_id,
-            config,
-            &successful_results,
-            all_results.len(),
-            total_input_tokens,
-            total_output_tokens,
-            total_reasoning_tokens,
-            &error_counts_by_message,
-            total_start_time,
-            total_end_time,
-            start_time_unix_ns,
-            end_time_unix_ns,
-        );
-
         let mut file = File::create(&summary_path)?;
         let summary_json = serde_json::to_string_pretty(&summary)?;
         file.write_all(summary_json.as_bytes())?;
     }
 
-    Ok(())
+    Ok(WrittenResults { summary })
 }
 
 #[allow(clippy::too_many_arguments)]
