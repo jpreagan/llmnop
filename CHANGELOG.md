@@ -6,6 +6,8 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 
+## [0.9.0]
+
 ### Changed
 
 - Benchmark JSON output now always writes to the platform app data/state directory for llmnop instead of the current working directory. ([#51](https://github.com/jpreagan/llmnop/pull/51))
@@ -21,7 +23,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 - Removed `--results-dir`; output location is now managed automatically. ([#51](https://github.com/jpreagan/llmnop/pull/51))
 
-## [0.8.0] - 2026-02-18
+## [0.8.0]
 
 ### Added
 
