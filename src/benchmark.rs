@@ -37,6 +37,7 @@ pub struct BenchmarkRequest {
     pub model: String,
     pub prompt: String,
     pub max_tokens: Option<u32>,
+    pub thinking_budget_tokens: Option<u32>,
     pub tokenizer: String,
     pub use_server_token_count: bool,
 }
@@ -232,8 +233,14 @@ async fn run_messages_benchmark(
     let mut reasoning_text = String::new();
     let mut usage: Option<MessagesUsage> = None;
 
-    let mut stream =
-        create_messages_stream(client, &request.model, &request.prompt, max_tokens).await?;
+    let mut stream = create_messages_stream(
+        client,
+        &request.model,
+        &request.prompt,
+        max_tokens,
+        request.thinking_budget_tokens,
+    )
+    .await?;
     while let Some(event_result) = stream.next().await {
         let event = event_result?;
         let now = Instant::now();
@@ -276,9 +283,27 @@ async fn run_messages_benchmark(
     let end_time = Instant::now();
     let request_end_unix_ns = unix_time_now_ns();
 
+    if generated_text.is_empty()
+        && reasoning_text.is_empty()
+        && usage
+            .as_ref()
+            .and_then(|usage| usage.output_tokens)
+            .is_some_and(|output_tokens| output_tokens > 0)
+    {
+        let output_tokens = usage.and_then(|usage| usage.output_tokens).unwrap_or(0);
+        return Err(anyhow!(
+            "Messages API reported {output_tokens} output tokens but streamed no text or thinking deltas"
+        ));
+    }
+
+    let use_server_token_count = should_use_messages_server_token_count(
+        request.use_server_token_count,
+        usage.as_ref(),
+        &reasoning_text,
+    );
     let usage_counts = usage.as_ref().and_then(token_counts_from_messages_usage);
     let token_counts = resolve_token_counts(
-        request.use_server_token_count,
+        use_server_token_count,
         usage_counts,
         &request.prompt,
         &generated_text,
@@ -334,14 +359,38 @@ fn token_counts_from_responses_usage(usage: &ResponsesUsage) -> Option<TokenCoun
 
 fn token_counts_from_messages_usage(usage: &MessagesUsage) -> Option<TokenCounts> {
     let input = usage.input_tokens?;
-    let output = usage.output_tokens?;
+    let output_total = usage.output_tokens?;
+    let reasoning = messages_usage_reasoning_tokens(usage).unwrap_or(0);
+    let output = output_total.saturating_sub(reasoning);
 
     Some(TokenCounts {
         input,
         output,
-        reasoning: 0,
-        total: input + output,
+        reasoning,
+        total: input + output_total,
     })
+}
+
+fn messages_usage_reasoning_tokens(usage: &MessagesUsage) -> Option<u32> {
+    usage
+        .output_tokens_details
+        .as_ref()
+        .and_then(|details| details.reasoning_tokens)
+        .or_else(|| {
+            usage
+                .completion_tokens_details
+                .as_ref()
+                .and_then(|details| details.reasoning_tokens)
+        })
+}
+
+fn should_use_messages_server_token_count(
+    requested: bool,
+    usage: Option<&MessagesUsage>,
+    reasoning_text: &str,
+) -> bool {
+    requested
+        && (reasoning_text.is_empty() || usage.and_then(messages_usage_reasoning_tokens).is_some())
 }
 
 fn merge_messages_usage(
@@ -358,6 +407,12 @@ fn merge_messages_usage(
             }
             if new_usage.output_tokens.is_some() {
                 existing.output_tokens = new_usage.output_tokens;
+            }
+            if new_usage.output_tokens_details.is_some() {
+                existing.output_tokens_details = new_usage.output_tokens_details;
+            }
+            if new_usage.completion_tokens_details.is_some() {
+                existing.completion_tokens_details = new_usage.completion_tokens_details;
             }
             Some(existing)
         }
@@ -521,6 +576,8 @@ fn unix_time_now_ns() -> u64 {
 
 #[cfg(test)]
 mod tests {
+    use crate::client::anthropic::messages::MessagesOutputTokensDetails;
+
     use super::*;
     use crate::client::openai::responses::ResponsesOutputTokensDetails;
     use async_openai::types::chat::CompletionTokensDetails;
@@ -954,6 +1011,8 @@ mod tests {
         let usage = MessagesUsage {
             input_tokens: Some(12),
             output_tokens: Some(8),
+            output_tokens_details: None,
+            completion_tokens_details: None,
         };
 
         let counts = token_counts_from_messages_usage(&usage).expect("counts");
@@ -964,18 +1023,82 @@ mod tests {
     }
 
     #[test]
+    fn test_token_counts_from_messages_usage_with_reasoning() {
+        let usage = MessagesUsage {
+            input_tokens: Some(12),
+            output_tokens: Some(8),
+            output_tokens_details: Some(MessagesOutputTokensDetails {
+                reasoning_tokens: Some(3),
+            }),
+            completion_tokens_details: None,
+        };
+
+        let counts = token_counts_from_messages_usage(&usage).expect("counts");
+        assert_eq!(counts.input, 12);
+        assert_eq!(counts.output, 5);
+        assert_eq!(counts.reasoning, 3);
+        assert_eq!(counts.total, 20);
+    }
+
+    #[test]
+    fn test_messages_server_counts_disabled_for_aggregate_reasoning_stream() {
+        let usage = MessagesUsage {
+            input_tokens: Some(12),
+            output_tokens: Some(8),
+            output_tokens_details: None,
+            completion_tokens_details: None,
+        };
+
+        assert!(!should_use_messages_server_token_count(
+            true,
+            Some(&usage),
+            "thinking"
+        ));
+    }
+
+    #[test]
+    fn test_messages_server_counts_allowed_for_reasoning_split() {
+        let usage = MessagesUsage {
+            input_tokens: Some(12),
+            output_tokens: Some(8),
+            output_tokens_details: Some(MessagesOutputTokensDetails {
+                reasoning_tokens: Some(3),
+            }),
+            completion_tokens_details: None,
+        };
+
+        assert!(should_use_messages_server_token_count(
+            true,
+            Some(&usage),
+            "thinking"
+        ));
+    }
+
+    #[test]
     fn test_merge_messages_usage_prefers_latest_values() {
         let current = MessagesUsage {
             input_tokens: Some(10),
             output_tokens: Some(1),
+            output_tokens_details: None,
+            completion_tokens_details: None,
         };
         let update = MessagesUsage {
             input_tokens: None,
             output_tokens: Some(12),
+            output_tokens_details: Some(MessagesOutputTokensDetails {
+                reasoning_tokens: Some(3),
+            }),
+            completion_tokens_details: None,
         };
 
         let merged = merge_messages_usage(Some(current), Some(update)).expect("merged");
         assert_eq!(merged.input_tokens, Some(10));
         assert_eq!(merged.output_tokens, Some(12));
+        assert_eq!(
+            merged
+                .output_tokens_details
+                .and_then(|details| details.reasoning_tokens),
+            Some(3)
+        );
     }
 }

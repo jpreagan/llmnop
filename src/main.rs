@@ -38,7 +38,7 @@ fn unix_time_now_ns() -> u64 {
         .unwrap_or_default()
 }
 
-fn sample_max_tokens(mean: u32, stddev: u32) -> u32 {
+fn sample_max_tokens(mean: u32, stddev: u32, min_exclusive: Option<u32>) -> u32 {
     if stddev == 0 {
         return mean.max(1);
     }
@@ -48,8 +48,12 @@ fn sample_max_tokens(mean: u32, stddev: u32) -> u32 {
 
     loop {
         let sample = dist.sample(&mut rng);
-        if sample >= 1.0 {
-            return sample.ceil() as u32;
+        if sample < 1.0 {
+            continue;
+        }
+        let tokens = sample.ceil() as u32;
+        if min_exclusive.is_none_or(|min| tokens > min) {
+            return tokens;
         }
     }
 }
@@ -151,14 +155,20 @@ async fn main() -> Result<()> {
         let prompt_clone = prompt.clone();
         let client_clone = client.clone();
         let tokenizer_clone = tokenizer.clone();
+        let min_output_tokens = if matches!(api, ApiType::Messages) {
+            args.thinking_budget_tokens
+        } else {
+            None
+        };
         let max_tokens = args
             .mean_output_tokens
-            .map(|mean| sample_max_tokens(mean, args.stddev_output_tokens));
+            .map(|mean| sample_max_tokens(mean, args.stddev_output_tokens, min_output_tokens));
 
         let request = BenchmarkRequest {
             model: model_name,
             prompt: prompt_clone,
             max_tokens,
+            thinking_budget_tokens: args.thinking_budget_tokens,
             tokenizer: tokenizer_clone,
             use_server_token_count,
         };
@@ -200,14 +210,20 @@ async fn main() -> Result<()> {
                     let prompt_clone = prompt.clone();
                     let client_clone = client.clone();
                     let tokenizer_clone = tokenizer.clone();
-                    let max_tokens = args
-                        .mean_output_tokens
-                        .map(|mean| sample_max_tokens(mean, args.stddev_output_tokens));
+                    let min_output_tokens = if matches!(api, ApiType::Messages) {
+                        args.thinking_budget_tokens
+                    } else {
+                        None
+                    };
+                    let max_tokens = args.mean_output_tokens.map(|mean| {
+                        sample_max_tokens(mean, args.stddev_output_tokens, min_output_tokens)
+                    });
 
                     let request = BenchmarkRequest {
                         model: model_name,
                         prompt: prompt_clone,
                         max_tokens,
+                        thinking_budget_tokens: args.thinking_budget_tokens,
                         tokenizer: tokenizer_clone,
                         use_server_token_count,
                     };

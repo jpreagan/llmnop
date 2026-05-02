@@ -2,6 +2,7 @@ use anyhow::{Context, Result, anyhow};
 use futures::{Stream, StreamExt};
 use reqwest::Client as HttpClient;
 use serde::Deserialize;
+use serde_json::{Value, json};
 use std::pin::Pin;
 use std::str;
 
@@ -69,6 +70,16 @@ pub struct MessagesUsage {
     pub input_tokens: Option<u32>,
     #[serde(default)]
     pub output_tokens: Option<u32>,
+    #[serde(default)]
+    pub output_tokens_details: Option<MessagesOutputTokensDetails>,
+    #[serde(default)]
+    pub completion_tokens_details: Option<MessagesOutputTokensDetails>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct MessagesOutputTokensDetails {
+    #[serde(default)]
+    pub reasoning_tokens: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -88,19 +99,10 @@ pub async fn create_messages_stream(
     model: &str,
     prompt: &str,
     max_tokens: u32,
+    thinking_budget_tokens: Option<u32>,
 ) -> Result<Pin<Box<dyn Stream<Item = Result<MessagesStreamEvent, anyhow::Error>> + Send>>> {
     let url = build_messages_url(&client.base_url)?;
-    let request = serde_json::json!({
-        "model": model,
-        "max_tokens": max_tokens,
-        "messages": [
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-        "stream": true
-    });
+    let request = build_messages_request(model, prompt, max_tokens, thinking_budget_tokens);
 
     let response = client
         .http
@@ -132,6 +134,34 @@ pub async fn create_messages_stream(
 
     let stream = response.bytes_stream();
     Ok(Box::pin(messages_event_stream(stream)))
+}
+
+fn build_messages_request(
+    model: &str,
+    prompt: &str,
+    max_tokens: u32,
+    thinking_budget_tokens: Option<u32>,
+) -> Value {
+    let mut request = json!({
+        "model": model,
+        "max_tokens": max_tokens,
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        "stream": true
+    });
+
+    if let Some(budget_tokens) = thinking_budget_tokens {
+        request["thinking"] = json!({
+            "type": "enabled",
+            "budget_tokens": budget_tokens
+        });
+    }
+
+    request
 }
 
 fn build_messages_url(base_url: &str) -> Result<String> {
@@ -326,5 +356,23 @@ mod tests {
             }
             _ => panic!("unexpected event variant"),
         }
+    }
+
+    #[test]
+    fn test_build_messages_request_without_thinking() {
+        let request = build_messages_request("test-model", "hello", 128, None);
+
+        assert_eq!(request["model"], "test-model");
+        assert_eq!(request["max_tokens"], 128);
+        assert_eq!(request["stream"], true);
+        assert!(request.get("thinking").is_none());
+    }
+
+    #[test]
+    fn test_build_messages_request_with_thinking() {
+        let request = build_messages_request("test-model", "hello", 1500, Some(1024));
+
+        assert_eq!(request["thinking"]["type"], "enabled");
+        assert_eq!(request["thinking"]["budget_tokens"], 1024);
     }
 }

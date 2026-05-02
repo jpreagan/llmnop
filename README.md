@@ -90,14 +90,17 @@ Results print to stdout and save under the llmnop app results directory:
 
 Control input and output token counts to simulate realistic workloads:
 
-| Flag                     | Default | Description                                               |
-| ------------------------ | ------- | --------------------------------------------------------- |
-| `--mean-input-tokens`    | 550     | Target prompt length in tokens                            |
-| `--stddev-input-tokens`  | 0       | Add variance to input length                              |
-| `--mean-output-tokens`   | none    | Cap output length (recommended for consistent benchmarks) |
-| `--stddev-output-tokens` | 0       | Add variance to output length                             |
+| Flag                       | Default | Description                                              |
+| -------------------------- | ------- | -------------------------------------------------------- |
+| `--mean-input-tokens`      | 550     | Target prompt length in tokens                           |
+| `--stddev-input-tokens`    | 0       | Add variance to input length                             |
+| `--mean-output-tokens`     | none    | Mean output token cap to request                         |
+| `--stddev-output-tokens`   | 0       | Add variance to output length                            |
+| `--thinking-budget-tokens` | none    | Enable Anthropic Messages thinking with this token budget |
 
 For `--api messages`, `--mean-output-tokens` is required so llmnop can set `max_tokens` in the request.
+When `--thinking-budget-tokens` is set, it must be at least 1024 and smaller than `--mean-output-tokens`.
+If `--use-server-token-count` is set for a Messages API thinking stream and the server only reports aggregate `output_tokens`, llmnop uses local tokenization for the output/reasoning split instead of treating aggregate tokens as visible output.
 
 ### Load Testing
 
@@ -166,7 +169,19 @@ llmnop --url http://localhost:8000/v1 --api-key token-abc123 \
 ```bash
 llmnop --api messages --url https://api.anthropic.com/v1 --api-key $ANTHROPIC_API_KEY \
   --model claude-haiku-4-5 \
+  --tokenizer Xenova/claude-tokenizer \
   --mean-output-tokens 150
+```
+
+**Anthropic Messages API with thinking:**
+
+```bash
+llmnop --api messages --url https://api.anthropic.com/v1 --api-key $ANTHROPIC_API_KEY \
+  --model claude-haiku-4-5 \
+  --tokenizer Xenova/claude-tokenizer \
+  --mean-output-tokens 1100 \
+  --thinking-budget-tokens 1024 \
+  --use-server-token-count
 ```
 
 **Custom tokenizer when model name doesn't match Hugging Face:**
