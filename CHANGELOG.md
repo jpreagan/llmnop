@@ -6,19 +6,21 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 
+## [0.10.0]
+
 ### Added
 
 - Add Anthropic Messages API support via `--api messages`. ([#36](https://github.com/jpreagan/llmnop/pull/36))
 - Add `--thinking-budget-tokens` for Anthropic Messages API extended thinking. ([#36](https://github.com/jpreagan/llmnop/pull/36))
-- Add separate provider usage token metrics in JSON output while preserving measured output/reasoning token metrics.
+- Add separate provider usage token metrics in JSON output while preserving measured output/reasoning token metrics. ([#64](https://github.com/jpreagan/llmnop/pull/64))
 
 ### Changed
 
-- `--use-server-token-count` now requests provider usage reporting instead of replacing llmnop's measured token metrics.
+- `--use-server-token-count` now requests provider usage reporting instead of replacing llmnop's measured token metrics. ([#64](https://github.com/jpreagan/llmnop/pull/64))
 
 ### Security
 
-- Prevent ambient `OPENAI_API_KEY` from being sent to benchmark endpoints when `--api-key` is omitted.
+- Prevent ambient `OPENAI_API_KEY` from being sent to benchmark endpoints when `--api-key` is omitted. ([#61](https://github.com/jpreagan/llmnop/pull/61))
 
 ## [0.9.0]
 
