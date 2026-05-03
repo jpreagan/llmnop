@@ -137,7 +137,7 @@ pub struct Args {
 
     #[arg(
         long,
-        help = "Use server-reported token usage for metrics",
+        help = "Request provider-reported token usage and record it separately",
         help_heading = "Tokenization"
     )]
     pub use_server_token_count: bool,
