@@ -83,17 +83,14 @@ async fn main() -> Result<()> {
     args.validate().map_err(|err| anyhow::anyhow!("{err}"))?;
 
     let api = args.api;
-    let api_key = args.api_key.clone();
+    let api_key = args.api_key.clone().unwrap_or_default();
     let client = match api {
         ApiType::Messages => Arc::new(ApiClient::AnthropicMessages(Box::new(MessagesClient::new(
             url.to_string(),
-            api_key.clone().unwrap_or_default(),
+            api_key.clone(),
         )))),
         ApiType::Chat | ApiType::Responses => {
-            let mut openai_config = OpenAIConfig::new().with_api_base(url);
-            if let Some(api_key) = api_key {
-                openai_config = openai_config.with_api_key(api_key);
-            }
+            let openai_config = OpenAIConfig::new().with_api_base(url).with_api_key(api_key);
             Arc::new(ApiClient::OpenAI(Box::new(Client::with_config(
                 openai_config,
             ))))
