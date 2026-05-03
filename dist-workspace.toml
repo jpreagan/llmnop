@@ -4,7 +4,7 @@ members = ["cargo:."]
 # Config for 'dist'
 [dist]
 # The preferred dist version to use in CI (Cargo.toml SemVer syntax)
-cargo-dist-version = "0.30.3"
+cargo-dist-version = "0.31.0"
 # CI backends to support
 ci = "github"
 # The installers to generate for each app
@@ -15,7 +15,7 @@ targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-da
 install-path = ["$XDG_BIN_HOME/", "$HOME/.local/bin"]
 # Whether to install an updater program
 install-updater = false
-# Build with self-update support for standalone installs
+# Features to pass to cargo build
 features = ["self-update"]
 # A GitHub repo to push Homebrew formulas to
 tap = "jpreagan/homebrew-tap"
