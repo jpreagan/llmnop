@@ -107,14 +107,14 @@ Control input and output token counts to simulate realistic workloads:
 
 ### Tokenization
 
-By default, llmnop uses a local Hugging Face tokenizer matching `--model` to count tokens.
+By default, llmnop uses a local Hugging Face tokenizer matching `--model` to count measured token metrics.
 
 | Flag                       | Description                                                               |
 | -------------------------- | ------------------------------------------------------------------------- |
 | `--tokenizer`              | Use a different HF tokenizer (when model name doesn't match Hugging Face) |
-| `--use-server-token-count` | Use server-reported usage instead of local tokenization                   |
+| `--use-server-token-count` | Request provider-reported usage and record it separately                 |
 
-Use `--use-server-token-count` when you trust the server's token counts and want to avoid downloading tokenizer files. The server must return usage data or llmnop will error.
+Primary token metrics preserve llmnop's measured semantics: `output_token_count` is visible answer tokens, `reasoning_token_count` is reasoning/thinking tokens, and `output_sequence_length` is their sum. Provider usage fields such as `usage_input_tokens`, `usage_output_tokens`, `usage_total_tokens`, and `usage_reasoning_tokens` are recorded separately when available because provider `usage` may be aggregate or unsplit.
 
 ### Output
 

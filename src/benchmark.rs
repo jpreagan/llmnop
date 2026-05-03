@@ -28,8 +28,17 @@ pub struct BenchmarkResult {
     pub inter_token_latency_s: f64,
     pub inter_event_latency_s: f64,
     pub total_tokens: u32,
+    pub provider_usage: Option<ProviderUsage>,
     pub request_start_unix_ns: u64,
     pub request_end_unix_ns: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ProviderUsage {
+    pub input_tokens: Option<u32>,
+    pub output_tokens: Option<u32>,
+    pub total_tokens: Option<u32>,
+    pub reasoning_tokens: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -47,6 +56,12 @@ struct TokenCounts {
     output: u32,
     reasoning: u32,
     total: u32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct RequestTiming {
+    start_unix_ns: u64,
+    end_unix_ns: u64,
 }
 
 pub async fn run_benchmark(
@@ -127,10 +142,8 @@ async fn run_chat_benchmark(
     let end_time = Instant::now();
     let request_end_unix_ns = unix_time_now_ns();
 
-    let usage_counts = usage.as_ref().map(token_counts_from_chat_usage);
-    let token_counts = resolve_token_counts(
-        request.use_server_token_count,
-        usage_counts,
+    let provider_usage = usage.as_ref().map(provider_usage_from_chat_usage);
+    let token_counts = compute_token_counts(
         &request.prompt,
         &generated_text,
         &reasoning_text,
@@ -143,8 +156,11 @@ async fn run_chat_benchmark(
         &content_arrivals,
         &reasoning_arrivals,
         &token_counts,
-        request_start_unix_ns,
-        request_end_unix_ns,
+        provider_usage,
+        RequestTiming {
+            start_unix_ns: request_start_unix_ns,
+            end_unix_ns: request_end_unix_ns,
+        },
     ))
 }
 
@@ -197,10 +213,8 @@ async fn run_responses_benchmark(
     let end_time = Instant::now();
     let request_end_unix_ns = unix_time_now_ns();
 
-    let usage_counts = usage.as_ref().and_then(token_counts_from_responses_usage);
-    let token_counts = resolve_token_counts(
-        request.use_server_token_count,
-        usage_counts,
+    let provider_usage = usage.as_ref().map(provider_usage_from_responses_usage);
+    let token_counts = compute_token_counts(
         &request.prompt,
         &generated_text,
         &reasoning_text,
@@ -213,8 +227,11 @@ async fn run_responses_benchmark(
         &content_arrivals,
         &reasoning_arrivals,
         &token_counts,
-        request_start_unix_ns,
-        request_end_unix_ns,
+        provider_usage,
+        RequestTiming {
+            start_unix_ns: request_start_unix_ns,
+            end_unix_ns: request_end_unix_ns,
+        },
     ))
 }
 
@@ -296,15 +313,8 @@ async fn run_messages_benchmark(
         ));
     }
 
-    let use_server_token_count = should_use_messages_server_token_count(
-        request.use_server_token_count,
-        usage.as_ref(),
-        &reasoning_text,
-    );
-    let usage_counts = usage.as_ref().and_then(token_counts_from_messages_usage);
-    let token_counts = resolve_token_counts(
-        use_server_token_count,
-        usage_counts,
+    let provider_usage = usage.as_ref().map(provider_usage_from_messages_usage);
+    let token_counts = compute_token_counts(
         &request.prompt,
         &generated_text,
         &reasoning_text,
@@ -317,58 +327,49 @@ async fn run_messages_benchmark(
         &content_arrivals,
         &reasoning_arrivals,
         &token_counts,
-        request_start_unix_ns,
-        request_end_unix_ns,
+        provider_usage,
+        RequestTiming {
+            start_unix_ns: request_start_unix_ns,
+            end_unix_ns: request_end_unix_ns,
+        },
     ))
 }
 
-fn token_counts_from_chat_usage(usage: &CompletionUsage) -> TokenCounts {
-    let reasoning = usage
+fn provider_usage_from_chat_usage(usage: &CompletionUsage) -> ProviderUsage {
+    let reasoning_tokens = usage
         .completion_tokens_details
         .as_ref()
-        .and_then(|details| details.reasoning_tokens)
-        .unwrap_or(0);
-    let output = usage.completion_tokens.saturating_sub(reasoning);
+        .and_then(|details| details.reasoning_tokens);
 
-    TokenCounts {
-        input: usage.prompt_tokens,
-        output,
-        reasoning,
-        total: usage.total_tokens,
+    ProviderUsage {
+        input_tokens: Some(usage.prompt_tokens),
+        output_tokens: Some(usage.completion_tokens),
+        total_tokens: Some(usage.total_tokens),
+        reasoning_tokens,
     }
 }
 
-fn token_counts_from_responses_usage(usage: &ResponsesUsage) -> Option<TokenCounts> {
-    let input = usage.input_tokens?;
-    let output_total = usage.output_tokens?;
-    let reasoning = usage
+fn provider_usage_from_responses_usage(usage: &ResponsesUsage) -> ProviderUsage {
+    let reasoning_tokens = usage
         .output_tokens_details
         .as_ref()
-        .and_then(|details| details.reasoning_tokens)
-        .unwrap_or(0);
-    let output = output_total.saturating_sub(reasoning);
-    let total = usage.total_tokens.unwrap_or(input + output_total);
+        .and_then(|details| details.reasoning_tokens);
 
-    Some(TokenCounts {
-        input,
-        output,
-        reasoning,
-        total,
-    })
+    ProviderUsage {
+        input_tokens: usage.input_tokens,
+        output_tokens: usage.output_tokens,
+        total_tokens: usage.total_tokens,
+        reasoning_tokens,
+    }
 }
 
-fn token_counts_from_messages_usage(usage: &MessagesUsage) -> Option<TokenCounts> {
-    let input = usage.input_tokens?;
-    let output_total = usage.output_tokens?;
-    let reasoning = messages_usage_reasoning_tokens(usage).unwrap_or(0);
-    let output = output_total.saturating_sub(reasoning);
-
-    Some(TokenCounts {
-        input,
-        output,
-        reasoning,
-        total: input + output_total,
-    })
+fn provider_usage_from_messages_usage(usage: &MessagesUsage) -> ProviderUsage {
+    ProviderUsage {
+        input_tokens: usage.input_tokens,
+        output_tokens: usage.output_tokens,
+        total_tokens: None,
+        reasoning_tokens: messages_usage_reasoning_tokens(usage),
+    }
 }
 
 fn messages_usage_reasoning_tokens(usage: &MessagesUsage) -> Option<u32> {
@@ -382,15 +383,6 @@ fn messages_usage_reasoning_tokens(usage: &MessagesUsage) -> Option<u32> {
                 .as_ref()
                 .and_then(|details| details.reasoning_tokens)
         })
-}
-
-fn should_use_messages_server_token_count(
-    requested: bool,
-    usage: Option<&MessagesUsage>,
-    reasoning_text: &str,
-) -> bool {
-    requested
-        && (reasoning_text.is_empty() || usage.and_then(messages_usage_reasoning_tokens).is_some())
 }
 
 fn merge_messages_usage(
@@ -416,21 +408,6 @@ fn merge_messages_usage(
             }
             Some(existing)
         }
-    }
-}
-
-fn resolve_token_counts(
-    use_server_token_count: bool,
-    usage_counts: Option<TokenCounts>,
-    prompt: &str,
-    generated_text: &str,
-    reasoning_text: &str,
-    tokenizer: &str,
-) -> Result<TokenCounts> {
-    if use_server_token_count {
-        usage_counts.ok_or_else(|| anyhow!("server did not return token usage"))
-    } else {
-        compute_token_counts(prompt, generated_text, reasoning_text, tokenizer)
     }
 }
 
@@ -470,8 +447,11 @@ fn process_benchmark_data(
         content_arrivals,
         reasoning_arrivals,
         tokens,
-        0,
-        0,
+        None,
+        RequestTiming {
+            start_unix_ns: 0,
+            end_unix_ns: 0,
+        },
     )
 }
 
@@ -481,8 +461,8 @@ fn process_benchmark_data_with_timestamps(
     content_arrivals: &[(Instant, String)],
     reasoning_arrivals: &[(Instant, String)],
     tokens: &TokenCounts,
-    request_start_unix_ns: u64,
-    request_end_unix_ns: u64,
+    provider_usage: Option<ProviderUsage>,
+    timing: RequestTiming,
 ) -> BenchmarkResult {
     let first_content_time = content_arrivals.first().map(|(t, _)| *t);
     let first_reasoning_time = reasoning_arrivals.first().map(|(t, _)| *t);
@@ -559,8 +539,9 @@ fn process_benchmark_data_with_timestamps(
         inter_token_latency_s,
         inter_event_latency_s,
         total_tokens: tokens.total,
-        request_start_unix_ns,
-        request_end_unix_ns,
+        provider_usage,
+        request_start_unix_ns: timing.start_unix_ns,
+        request_end_unix_ns: timing.end_unix_ns,
     }
 }
 
@@ -981,15 +962,15 @@ mod tests {
             }),
         };
 
-        let counts = token_counts_from_chat_usage(&usage);
-        assert_eq!(counts.input, 12);
-        assert_eq!(counts.output, 5);
-        assert_eq!(counts.reasoning, 3);
-        assert_eq!(counts.total, 20);
+        let provider_usage = provider_usage_from_chat_usage(&usage);
+        assert_eq!(provider_usage.input_tokens, Some(12));
+        assert_eq!(provider_usage.output_tokens, Some(8));
+        assert_eq!(provider_usage.reasoning_tokens, Some(3));
+        assert_eq!(provider_usage.total_tokens, Some(20));
     }
 
     #[test]
-    fn test_token_counts_from_responses_usage_with_reasoning() {
+    fn test_provider_usage_from_responses_usage_with_reasoning() {
         let usage = ResponsesUsage {
             input_tokens: Some(9),
             output_tokens: Some(4),
@@ -999,15 +980,15 @@ mod tests {
             }),
         };
 
-        let counts = token_counts_from_responses_usage(&usage).expect("counts");
-        assert_eq!(counts.input, 9);
-        assert_eq!(counts.output, 3);
-        assert_eq!(counts.reasoning, 1);
-        assert_eq!(counts.total, 13);
+        let provider_usage = provider_usage_from_responses_usage(&usage);
+        assert_eq!(provider_usage.input_tokens, Some(9));
+        assert_eq!(provider_usage.output_tokens, Some(4));
+        assert_eq!(provider_usage.reasoning_tokens, Some(1));
+        assert_eq!(provider_usage.total_tokens, None);
     }
 
     #[test]
-    fn test_token_counts_from_messages_usage() {
+    fn test_provider_usage_from_messages_usage() {
         let usage = MessagesUsage {
             input_tokens: Some(12),
             output_tokens: Some(8),
@@ -1015,15 +996,15 @@ mod tests {
             completion_tokens_details: None,
         };
 
-        let counts = token_counts_from_messages_usage(&usage).expect("counts");
-        assert_eq!(counts.input, 12);
-        assert_eq!(counts.output, 8);
-        assert_eq!(counts.reasoning, 0);
-        assert_eq!(counts.total, 20);
+        let provider_usage = provider_usage_from_messages_usage(&usage);
+        assert_eq!(provider_usage.input_tokens, Some(12));
+        assert_eq!(provider_usage.output_tokens, Some(8));
+        assert_eq!(provider_usage.reasoning_tokens, None);
+        assert_eq!(provider_usage.total_tokens, None);
     }
 
     #[test]
-    fn test_token_counts_from_messages_usage_with_reasoning() {
+    fn test_provider_usage_from_messages_usage_with_reasoning() {
         let usage = MessagesUsage {
             input_tokens: Some(12),
             output_tokens: Some(8),
@@ -1033,45 +1014,11 @@ mod tests {
             completion_tokens_details: None,
         };
 
-        let counts = token_counts_from_messages_usage(&usage).expect("counts");
-        assert_eq!(counts.input, 12);
-        assert_eq!(counts.output, 5);
-        assert_eq!(counts.reasoning, 3);
-        assert_eq!(counts.total, 20);
-    }
-
-    #[test]
-    fn test_messages_server_counts_disabled_for_aggregate_reasoning_stream() {
-        let usage = MessagesUsage {
-            input_tokens: Some(12),
-            output_tokens: Some(8),
-            output_tokens_details: None,
-            completion_tokens_details: None,
-        };
-
-        assert!(!should_use_messages_server_token_count(
-            true,
-            Some(&usage),
-            "thinking"
-        ));
-    }
-
-    #[test]
-    fn test_messages_server_counts_allowed_for_reasoning_split() {
-        let usage = MessagesUsage {
-            input_tokens: Some(12),
-            output_tokens: Some(8),
-            output_tokens_details: Some(MessagesOutputTokensDetails {
-                reasoning_tokens: Some(3),
-            }),
-            completion_tokens_details: None,
-        };
-
-        assert!(should_use_messages_server_token_count(
-            true,
-            Some(&usage),
-            "thinking"
-        ));
+        let provider_usage = provider_usage_from_messages_usage(&usage);
+        assert_eq!(provider_usage.input_tokens, Some(12));
+        assert_eq!(provider_usage.output_tokens, Some(8));
+        assert_eq!(provider_usage.reasoning_tokens, Some(3));
+        assert_eq!(provider_usage.total_tokens, None);
     }
 
     #[test]

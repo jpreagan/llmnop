@@ -108,6 +108,14 @@ pub struct BenchmarkSummary {
     pub output_token_count: MetricStats,
     pub reasoning_token_count: MetricStats,
     pub output_sequence_length: MetricStats,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage_input_tokens: Option<MetricStats>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage_output_tokens: Option<MetricStats>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage_total_tokens: Option<MetricStats>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage_reasoning_tokens: Option<MetricStats>,
 
     pub total_input_tokens: MetricStats,
     pub total_output_tokens: MetricStats,
@@ -443,6 +451,32 @@ pub fn write_results_json(
                     "output_sequence_length".to_string(),
                     metric_value_u64((br.output_tokens + br.reasoning_tokens) as u64, "tokens"),
                 );
+                if let Some(usage) = &br.provider_usage {
+                    if let Some(tokens) = usage.input_tokens {
+                        metrics.insert(
+                            "usage_input_tokens".to_string(),
+                            metric_value_u64(tokens as u64, "tokens"),
+                        );
+                    }
+                    if let Some(tokens) = usage.output_tokens {
+                        metrics.insert(
+                            "usage_output_tokens".to_string(),
+                            metric_value_u64(tokens as u64, "tokens"),
+                        );
+                    }
+                    if let Some(tokens) = usage.total_tokens {
+                        metrics.insert(
+                            "usage_total_tokens".to_string(),
+                            metric_value_u64(tokens as u64, "tokens"),
+                        );
+                    }
+                    if let Some(tokens) = usage.reasoning_tokens {
+                        metrics.insert(
+                            "usage_reasoning_tokens".to_string(),
+                            metric_value_u64(tokens as u64, "tokens"),
+                        );
+                    }
+                }
 
                 let record = RequestRecord {
                     metadata: RequestMetadata {
@@ -540,6 +574,10 @@ fn build_summary(
     let mut out_tokens = Vec::new();
     let mut reasoning_tokens = Vec::new();
     let mut output_sequence_tokens = Vec::new();
+    let mut usage_input_tokens = Vec::new();
+    let mut usage_output_tokens = Vec::new();
+    let mut usage_total_tokens = Vec::new();
+    let mut usage_reasoning_tokens = Vec::new();
 
     for br in successful_results {
         request_latency_ms.push(br.total_latency.as_secs_f64() * 1000.0);
@@ -554,6 +592,20 @@ fn build_summary(
         out_tokens.push(br.output_tokens as f64);
         reasoning_tokens.push(br.reasoning_tokens as f64);
         output_sequence_tokens.push((br.output_tokens + br.reasoning_tokens) as f64);
+        if let Some(usage) = &br.provider_usage {
+            if let Some(tokens) = usage.input_tokens {
+                usage_input_tokens.push(tokens as f64);
+            }
+            if let Some(tokens) = usage.output_tokens {
+                usage_output_tokens.push(tokens as f64);
+            }
+            if let Some(tokens) = usage.total_tokens {
+                usage_total_tokens.push(tokens as f64);
+            }
+            if let Some(tokens) = usage.reasoning_tokens {
+                usage_reasoning_tokens.push(tokens as f64);
+            }
+        }
     }
 
     let completed_requests = successful_results.len();
@@ -593,7 +645,7 @@ fn build_summary(
         .collect();
 
     BenchmarkSummary {
-        version: "2026-05-02".to_string(),
+        version: "2026-05-03".to_string(),
         schema_version: "2.0".to_string(),
         llmnop_version: env!("CARGO_PKG_VERSION").to_string(),
         benchmark_id: run_id.to_string(),
@@ -636,6 +688,10 @@ fn build_summary(
         output_token_count: metric_stats_from_values(&out_tokens, "tokens"),
         reasoning_token_count: metric_stats_from_values(&reasoning_tokens, "tokens"),
         output_sequence_length: metric_stats_from_values(&output_sequence_tokens, "tokens"),
+        usage_input_tokens: metric_stats_optional(&usage_input_tokens, "tokens"),
+        usage_output_tokens: metric_stats_optional(&usage_output_tokens, "tokens"),
+        usage_total_tokens: metric_stats_optional(&usage_total_tokens, "tokens"),
+        usage_reasoning_tokens: metric_stats_optional(&usage_reasoning_tokens, "tokens"),
         total_input_tokens: metric_stats_avg_only("tokens", total_input_tokens as f64),
         total_output_tokens: metric_stats_avg_only("tokens", total_output_tokens as f64),
         total_reasoning_tokens: metric_stats_avg_only("tokens", total_reasoning_tokens as f64),
@@ -748,6 +804,14 @@ fn metric_stats_from_values(values: &[f64], unit: &str) -> MetricStats {
         min: Some(stats.min),
         max: Some(stats.max),
         std: Some(stats.stddev),
+    }
+}
+
+fn metric_stats_optional(values: &[f64], unit: &str) -> Option<MetricStats> {
+    if values.is_empty() {
+        None
+    } else {
+        Some(metric_stats_from_values(values, unit))
     }
 }
 
@@ -949,6 +1013,12 @@ mod tests {
             inter_token_latency_s: 0.01,
             inter_event_latency_s: 0.02,
             total_tokens: 700,
+            provider_usage: Some(crate::benchmark::ProviderUsage {
+                input_tokens: Some(550),
+                output_tokens: Some(150),
+                total_tokens: Some(700),
+                reasoning_tokens: Some(30),
+            }),
             request_start_unix_ns: 1_700_000_000_000_000_000,
             request_end_unix_ns: 1_700_000_000_900_000_000,
         }];
@@ -969,11 +1039,16 @@ mod tests {
         );
 
         assert_eq!(summary.schema_version, "2.0");
+        assert_eq!(summary.version, "2026-05-03");
         assert_eq!(summary.request_latency.unit, "ms");
         assert_eq!(
             summary.output_token_throughput_per_request.unit,
             "tokens/sec/request"
         );
         assert!(summary.time_to_first_output_token.is_some());
+        assert_eq!(
+            summary.usage_output_tokens.and_then(|stats| stats.avg),
+            Some(150.0)
+        );
     }
 }

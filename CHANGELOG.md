@@ -10,6 +10,11 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 - Add Anthropic Messages API support via `--api messages`. ([#36](https://github.com/jpreagan/llmnop/pull/36))
 - Add `--thinking-budget-tokens` for Anthropic Messages API extended thinking. ([#36](https://github.com/jpreagan/llmnop/pull/36))
+- Add separate provider usage token metrics in JSON output while preserving measured output/reasoning token metrics.
+
+### Changed
+
+- `--use-server-token-count` now requests provider usage reporting instead of replacing llmnop's measured token metrics.
 
 ### Security
 
