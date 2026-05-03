@@ -14,8 +14,8 @@ exclude = ["assets/*", ".agents/*", ".claude/*", ".github/*", "AGENTS.md", "CLAU
 
 [dependencies]
 anyhow = "1.0.97"
-async-openai = { version = "0.33.0", features = ["byot", "chat-completion", "responses"] }
-axoupdater = { version = "0.9.1", default-features = false, features = ["github_releases"], optional = true }
+async-openai = { version = "0.36.1", features = ["byot", "chat-completion", "responses"] }
+axoupdater = { version = "0.10.0", default-features = false, features = ["github_releases"], optional = true }
 clap = { version = "4.5.34", features = ["derive"] }
 futures = "0.3.31"
 indicatif = "0.18.0"
@@ -25,7 +25,7 @@ reqwest = { version = "0.13.1", default-features = false, features = ["json", "s
 sanitize-filename = "0.6.0"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
-tokenizers = { version = "0.22.1", features = ["http", "rustls-tls"] }
+tokenizers = { version = "0.23.1", features = ["http", "rustls-tls"] }
 tokio = { version = "1.44.1", features = ["full"] }
 comfy-table = { version = "7", features = ["custom_styling"] }
 directories = "6.0.0"
