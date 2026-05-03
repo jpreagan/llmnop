@@ -9,6 +9,7 @@ use clap::{CommandFactory, Parser, ValueEnum};
 pub enum ApiType {
     Chat,
     Responses,
+    Messages,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
@@ -81,7 +82,7 @@ pub struct Args {
 
     #[arg(
         long,
-        help = "Target output length [default: none]",
+        help = "Mean output token cap to request [default: none]",
         help_heading = "Request Shaping"
     )]
     pub mean_output_tokens: Option<u32>,
@@ -93,6 +94,13 @@ pub struct Args {
         help_heading = "Request Shaping"
     )]
     pub stddev_output_tokens: u32,
+
+    #[arg(
+        long,
+        help = "Enable Anthropic Messages thinking with this token budget",
+        help_heading = "Request Shaping"
+    )]
+    pub thinking_budget_tokens: Option<u32>,
 
     // Load Testing
     #[arg(
@@ -189,6 +197,30 @@ impl Args {
             self.output_format
         }
     }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if matches!(self.api, ApiType::Messages) && self.mean_output_tokens.is_none() {
+            return Err("--mean-output-tokens is required for --api messages".to_string());
+        }
+        if let Some(thinking_budget) = self.thinking_budget_tokens {
+            if !matches!(self.api, ApiType::Messages) {
+                return Err("--thinking-budget-tokens requires --api messages".to_string());
+            }
+            if thinking_budget < 1024 {
+                return Err("--thinking-budget-tokens must be at least 1024".to_string());
+            }
+            let mean_output_tokens = self
+                .mean_output_tokens
+                .expect("--mean-output-tokens is required for --api messages");
+            if mean_output_tokens <= thinking_budget {
+                return Err(
+                    "--mean-output-tokens must be greater than --thinking-budget-tokens"
+                        .to_string(),
+                );
+            }
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -228,6 +260,150 @@ mod tests {
         .expect("parse args");
 
         assert!(matches!(args.api, ApiType::Responses));
+    }
+
+    #[test]
+    fn test_parse_messages_api_type() {
+        let args = Args::try_parse_from([
+            "llmnop",
+            "--api",
+            "messages",
+            "--model",
+            "test-model",
+            "--url",
+            "https://api.anthropic.com/v1",
+            "--api-key",
+            "test-key",
+        ])
+        .expect("parse args");
+
+        assert!(matches!(args.api, ApiType::Messages));
+    }
+
+    #[test]
+    fn test_messages_api_requires_mean_output_tokens() {
+        let args = Args::try_parse_from([
+            "llmnop",
+            "--api",
+            "messages",
+            "--model",
+            "test-model",
+            "--url",
+            "https://api.anthropic.com/v1",
+            "--api-key",
+            "test-key",
+        ])
+        .expect("parse args");
+
+        assert!(args.validate().is_err());
+    }
+
+    #[test]
+    fn test_messages_api_allows_mean_output_tokens() {
+        let args = Args::try_parse_from([
+            "llmnop",
+            "--api",
+            "messages",
+            "--model",
+            "test-model",
+            "--url",
+            "https://api.anthropic.com/v1",
+            "--api-key",
+            "test-key",
+            "--mean-output-tokens",
+            "150",
+        ])
+        .expect("parse args");
+
+        assert!(args.validate().is_ok());
+    }
+
+    #[test]
+    fn test_thinking_budget_requires_messages_api() {
+        let args = Args::try_parse_from([
+            "llmnop",
+            "--api",
+            "chat",
+            "--model",
+            "test-model",
+            "--url",
+            "http://localhost:8000/v1",
+            "--api-key",
+            "test-key",
+            "--mean-output-tokens",
+            "1500",
+            "--thinking-budget-tokens",
+            "1024",
+        ])
+        .expect("parse args");
+
+        assert!(args.validate().is_err());
+    }
+
+    #[test]
+    fn test_thinking_budget_requires_at_least_1024_tokens() {
+        let args = Args::try_parse_from([
+            "llmnop",
+            "--api",
+            "messages",
+            "--model",
+            "test-model",
+            "--url",
+            "https://api.anthropic.com/v1",
+            "--api-key",
+            "test-key",
+            "--mean-output-tokens",
+            "1500",
+            "--thinking-budget-tokens",
+            "1023",
+        ])
+        .expect("parse args");
+
+        assert!(args.validate().is_err());
+    }
+
+    #[test]
+    fn test_thinking_budget_requires_larger_mean_output_tokens() {
+        let args = Args::try_parse_from([
+            "llmnop",
+            "--api",
+            "messages",
+            "--model",
+            "test-model",
+            "--url",
+            "https://api.anthropic.com/v1",
+            "--api-key",
+            "test-key",
+            "--mean-output-tokens",
+            "1024",
+            "--thinking-budget-tokens",
+            "1024",
+        ])
+        .expect("parse args");
+
+        assert!(args.validate().is_err());
+    }
+
+    #[test]
+    fn test_thinking_budget_allows_messages_api() {
+        let args = Args::try_parse_from([
+            "llmnop",
+            "--api",
+            "messages",
+            "--model",
+            "test-model",
+            "--url",
+            "https://api.anthropic.com/v1",
+            "--api-key",
+            "test-key",
+            "--mean-output-tokens",
+            "1500",
+            "--thinking-budget-tokens",
+            "1024",
+        ])
+        .expect("parse args");
+
+        assert!(args.validate().is_ok());
     }
 
     #[test]
