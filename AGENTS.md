@@ -1,6 +1,6 @@
 # llmnop
 
-CLI tool for benchmarking LLM inference endpoints (OpenAI API compatible). Measures TTFT, TTFO, inter-token latency, inter-event latency, throughput, and end-to-end latency.
+CLI tool for benchmarking streaming LLM inference endpoints.
 
 ## CLI
 
@@ -8,13 +8,16 @@ CLI tool for benchmarking LLM inference endpoints (OpenAI API compatible). Measu
 - `--api-key` is optional for unauthenticated endpoints.
 - Use `--help` for complete usage and flags.
 
-## Key Metrics
+## Metric Semantics
 
-- **TTFT** - Time to first token (content or reasoning)
-- **TTFO** - Time to first output token (content only, excludes reasoning)
-- **Inter-token latency** - Estimated average gap between generated tokens: generation window / (generated tokens - 1)
-- **Inter-event latency** - Average gap between streamed events/chunks
-- **Throughput** - Tokens/second over generation window (first to last token)
+- **TTFT**: Request start to the first non-empty content or reasoning delta.
+- **TTFO**: Request start to the first non-empty content delta; absent when no content is streamed.
+- **Request latency**: Request start until the stream completes.
+- **Generation window**: First to last non-empty content or reasoning delta.
+- **Inter-token latency**: Generation window divided by measured generated tokens minus one.
+- **Inter-event latency**: Average gap between non-empty content or reasoning deltas.
+- **Throughput**: Per-request output throughput uses the generation window; aggregate throughput uses the full benchmark duration.
+- **Token counts**: Primary metrics locally tokenize streamed output and reasoning. Provider-reported usage remains separate.
 
 ## Output Version
 
