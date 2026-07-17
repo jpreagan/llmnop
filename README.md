@@ -15,7 +15,7 @@ It's a single binary with no dependencies, just download and run. Use it to comp
 Use the installer:
 
 ```bash
-curl -sSfL https://github.com/jpreagan/llmnop/releases/latest/download/llmnop-installer.sh | sh
+curl -sSfL https://llmnop.xyz/install.sh | sh
 ```
 
 It places `llmnop` in `~/.local/bin`. Make sure that's on your `PATH`.
