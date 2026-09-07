@@ -169,6 +169,8 @@ Every run writes a unique directory containing:
 - `summary.json`: configuration, outcomes, totals, and statistics.
 - `requests.jsonl`: one measurement record per attempted request, including warmup.
 
+`summary.json` records `schema_version` for the structure and semantics of both result files, and `llmnop_version` for the release that produced them.
+
 Use `--results-dir` to choose the parent directory. Defaults are:
 
 - macOS: `~/Library/Application Support/llmnop/results`

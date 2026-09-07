@@ -100,7 +100,6 @@ pub struct TokenTotals {
 
 #[derive(Serialize)]
 pub struct BenchmarkSummary<'a> {
-    pub version: &'static str,
     pub schema_version: &'static str,
     pub llmnop_version: &'static str,
     pub run_id: String,
@@ -188,7 +187,6 @@ impl<'a> BenchmarkSummary<'a> {
             .then(|| measurement.completed as f64 / measurement.started as f64);
         let rate_duration = duration.filter(|d| *d > 0.0);
         Self {
-            version: "2026-09-06.1",
             schema_version: "3.0",
             llmnop_version: env!("CARGO_PKG_VERSION"),
             run_id,
