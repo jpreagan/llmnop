@@ -2,9 +2,9 @@
   <img src="assets/llmnop.png" alt="llmnop" width="420">
 </p>
 
-`llmnop` benchmarks streaming LLM inference endpoints. It answers one question:
+`llmnop` benchmarks the performance of LLM inference endpoints. It answers the question:
 
-**At concurrency N, how fast is each request on this endpoint under a specified workload?**
+> At concurrency N, how fast is each request on this endpoint under a specified workload?
 
 Use it to compare models, providers, and serving configurations, or see how performance changes as more requests share an endpoint. It measures the experience through the API, including network delays and server queueing.
 
@@ -28,48 +28,48 @@ Update with `brew upgrade llmnop` or, for standalone installs, `llmnop update`.
 
 ## Run a benchmark
 
-With Ollama running and the Qwen model available:
+With vLLM serving `Qwen/Qwen3.8-27B`:
 
 ```bash
 llmnop \
-  --url http://localhost:11434/v1 \
-  --api responses \
-  --model qwen3.8:27b-mlx \
-  --tokenizer Qwen/Qwen3.8-27B \
+  --url http://localhost:8000/v1 \
+  --api chat \
+  --api-key token-abc123 \
+  --model Qwen/Qwen3.8-27B \
   --input-tokens 550 \
-  --output-cap 1024 \
+  --output-cap 2048 \
   --requests 10 \
   --concurrency 4
 ```
 
 This sends 10 requests with up to four in flight. Each completed or failed attempt frees a slot for the next request. Failed attempts count toward the total and are not retried.
 
-Change the URL and model to use your endpoint. `--tokenizer` accepts a Hugging Face tokenizer ID or a local `tokenizer.json`; when omitted, it uses the model name. Choose the model's tokenizer for accurate prompt sizing and local token counts.
+Change the URL and model to use your endpoint. `--tokenizer` accepts a Hugging Face tokenizer ID or a local `tokenizer.json`. When omitted, it uses the model name.
 
 All requests stream. The API option selects the path appended to your base URL:
 
-| `--api` | Path | Authentication |
-| --- | --- | --- |
-| `chat` (default) | `/chat/completions` | Bearer token |
-| `responses` | `/responses` | Bearer token |
-| `messages` | `/messages` | `x-api-key` |
+| `--api`          | Path                | Authentication |
+| ---------------- | ------------------- | -------------- |
+| `chat` (default) | `/chat/completions` | Bearer token   |
+| `responses`      | `/responses`        | Bearer token   |
+| `messages`       | `/messages`         | `x-api-key`    |
 
 Include the version prefix, such as `/v1`, in `--url`. For authenticated endpoints, pass `--api-key "$API_KEY"`. It is optional for local servers that do not require authentication.
 
 ## Read the results
 
-| Question | What to look at |
-| --- | --- |
-| How long before anything arrives? | **TTFT:** time to the first nonempty content or exposed reasoning. |
-| How long before the answer starts? | **TTFO:** time to the first nonempty response content. |
-| How long until the request finishes? | **Request latency:** time from sending the request to stream completion. |
-| How fast does generation arrive? | **Generation rate:** locally counted content and reasoning tokens per second during generation. |
-| Does the stream stall? | **Mean and longest stream-event gaps:** pauses between content or reasoning deliveries. |
-| How consistent is the experience? | **Mean and percentiles:** compare the median (p50) with slower requests at p95 and p99. |
-| How much work does the endpoint complete? | **Completed requests/s and generated tokens/s:** throughput across the measured run. |
-| Are requests completing reliably? | **Completed, failed, timed out, and cancelled counts.** Output-limit and empty completions are identified separately. |
+| Question                                  | What to look at                                                                                                       |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| How long before anything arrives?         | **TTFT:** time to the first nonempty content or exposed reasoning.                                                    |
+| How long before the answer starts?        | **TTFO:** time to the first nonempty response content.                                                                |
+| How long until the request finishes?      | **Request latency:** time from sending the request to stream completion.                                              |
+| How fast does generation arrive?          | **Generation rate:** locally counted content and reasoning tokens per second during generation.                       |
+| Does the stream stall?                    | **Mean and longest stream-event gaps:** pauses between content or reasoning deliveries.                               |
+| How consistent is the experience?         | **Mean and percentiles:** compare the median (p50) with slower requests at p95 and p99.                               |
+| How much work does the endpoint complete? | **Completed requests/s and generated tokens/s:** throughput across the measured run.                                  |
+| Are requests completing reliably?         | **Completed, failed, timed out, and cancelled counts.** Output-limit and empty completions are identified separately. |
 
-Repeat a workload at different concurrency levels, keeping input sizes, output caps, tokenizer, and reasoning settings consistent. Check actual output lengths when comparing timings. Ten requests are a smoke test; use larger samples to assess slow requests reliably.
+Repeat a workload at different concurrency levels, keeping input sizes, output caps, tokenizer, and reasoning settings consistent. Check actual output lengths when comparing timings.
 
 A few details matter when comparing runs:
 
@@ -80,16 +80,16 @@ A few details matter when comparing runs:
 
 ## Shape the workload
 
-Prompts are random passages from Shakespeare, using the same corpus as [AIPerf](https://github.com/ai-dynamo/aiperf). This is a synthetic load test, not an evaluation of answer quality or coding ability.
+Prompts are passages sampled from Shakespeare, starting at random token positions and sized to the requested input length. Varying the starting position reduces prefix-cache reuse compared with repeatedly sending the same prompt. This is a synthetic load test, not an evaluation of answer quality or coding ability.
 
-| Option | Meaning | Default |
-| --- | --- | --- |
-| `--input-tokens` | Mean prompt-text token target | `550` |
-| `--input-tokens-stddev` | Variation in input targets | `0` |
-| `--output-cap` | Mean requested generation-token cap | Omitted; required for Messages |
-| `--output-cap-stddev` | Variation in output caps | `0` |
+| Option                  | Meaning                             | Default                        |
+| ----------------------- | ----------------------------------- | ------------------------------ |
+| `--input-tokens`        | Mean prompt-text token target       | `550`                          |
+| `--input-tokens-stddev` | Variation in input targets          | `0`                            |
+| `--output-cap`          | Mean requested generation-token cap | Omitted; required for Messages |
+| `--output-cap-stddev`   | Variation in output caps            | `0`                            |
 
-Zero standard deviation gives every request the same target or cap; prompt text still varies. Nonzero values sample positive integer lengths from a normal distribution. Input targets count prompt text using the selected tokenizer, excluding server-added formatting. Varying output caps requires `--output-cap`.
+Zero standard deviation gives every request the same target or cap, and the prompt text still varies. Nonzero values sample positive integer lengths from a normal distribution. Input targets count prompt text using the selected tokenizer, excluding server-added formatting. Varying output caps requires `--output-cap`.
 
 **An output cap is a ceiling, not a promised response length.** A model may finish earlier or spend its allowance reasoning before producing an answer. A server may also ignore unsupported cap fields: llmnop sends `max_completion_tokens` for Chat, `max_output_tokens` for Responses, and `max_tokens` for Messages. Ollama versions that ignore the Chat field can be tested through Responses or Messages instead.
 
@@ -99,15 +99,15 @@ Use `--requests` to set the number of measured attempts (default `10`) and `--co
 
 Pass model- or server-specific fields through `--extra-inputs` as one JSON object. For example:
 
-| API | Example |
-| --- | --- |
-| Chat | `--extra-inputs '{"reasoning_effort":"low"}'` |
-| Responses | `--extra-inputs '{"reasoning":{"effort":"low"}}'` |
-| Messages | `--output-cap 2048 --extra-inputs '{"thinking":{"type":"enabled","budget_tokens":1024}}'` |
+| API       | Example                                                                                   |
+| --------- | ----------------------------------------------------------------------------------------- |
+| Chat      | `--extra-inputs '{"reasoning_effort":"low"}'`                                             |
+| Responses | `--extra-inputs '{"reasoning":{"effort":"low"}}'`                                         |
+| Messages  | `--output-cap 2048 --extra-inputs '{"thinking":{"type":"enabled","budget_tokens":1024}}'` |
 
 These fields go directly into every request. Supported settings depend on the model and server; choose an output cap that satisfies their requirements. llmnop does not translate effort levels or adjust caps around a thinking budget.
 
-Extra inputs cannot replace fields controlled by llmnop, such as the model, messages, streaming mode, or output cap. Use `--api-key` for credentials; extra inputs are saved in the results.
+Extra inputs cannot replace fields controlled by llmnop, such as the model, messages, streaming mode, or output cap. Use `--api-key` for credentials. Extra inputs are saved in the results.
 
 ## Save and inspect results
 
@@ -126,10 +126,6 @@ Exit codes: `0` for all attempts completed, `1` for request or operational failu
 
 Run `llmnop --help` for the full option list.
 
-## Development
+## License
 
-```bash
-cargo fmt --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test --all-features
-```
+[Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0)
