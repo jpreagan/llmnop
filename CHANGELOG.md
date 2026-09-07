@@ -8,7 +8,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Added
 
-- Restore `--results-dir` and `--no-progress`. ([#72](https://github.com/jpreagan/llmnop/pull/72))
+- Restore `--results-dir`. ([#72](https://github.com/jpreagan/llmnop/pull/72))
 
 ### Changed
 

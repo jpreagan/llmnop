@@ -140,9 +140,6 @@ pub struct Args {
         help_heading = "Output"
     )]
     pub request_usage: bool,
-    #[arg(long, help = "Suppress progress on stderr", help_heading = "Output")]
-    #[serde(skip)]
-    pub no_progress: bool,
 }
 
 impl Args {

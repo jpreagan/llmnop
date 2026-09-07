@@ -323,7 +323,6 @@ async fn scheduler_bounds_concurrency_counts_failures_and_exports_recomputable_r
         "5",
         "--concurrency",
         "2",
-        "--no-progress",
     ]);
     let client = client::http_client().unwrap();
     let tokenizer = Arc::new(tokens::test_tokenizer());

@@ -175,9 +175,7 @@ Use `--results-dir` to choose the parent directory. Defaults are:
 - Linux: `${XDG_STATE_HOME:-$HOME/.local/state}/llmnop/results`
 - Windows: the platform-local llmnop data directory, under `results`
 
-`--format table|json|none` controls stdout only. Progress, errors, and the result
-location go to stderr. `--no-progress` disables progress. Prompt text, response
-text, credentials, and individual event histories are not exported.
+`--format table|json|none` controls stdout only. Progress, errors, and the result location go to stderr. Progress is shown only when stderr is a terminal. Prompt text, response text, credentials, and individual event histories are not exported.
 
 Each request record contains its stable ID and phase, timestamps, elapsed time,
 status, HTTP status, provider finish reason, sampled input target, requested output

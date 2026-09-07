@@ -86,7 +86,7 @@ async fn run_phase(
     cancel: &watch::Receiver<bool>,
     writer: &mut ResultsWriter,
 ) -> Result<Vec<RequestRecord>> {
-    let pb = if args.no_progress || !io::stderr().is_terminal() {
+    let pb = if !io::stderr().is_terminal() {
         ProgressBar::hidden()
     } else {
         ProgressBar::new(requests.len() as u64)
