@@ -6,8 +6,17 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 
+### Added
+
+- Support local tokenizer JSON files through `--tokenizer`. ([#69](https://github.com/jpreagan/llmnop/pull/69))
+
+### Changed
+
+- Rename `--mean-input-tokens` to `--input-tokens`, `--stddev-input-tokens` to `--input-tokens-stddev`, `--mean-output-tokens` to `--output-cap`, `--stddev-output-tokens` to `--output-cap-stddev`, and `--thinking-budget-tokens` to `--thinking-budget`. ([#69](https://github.com/jpreagan/llmnop/pull/69))
+
 ### Fixed
 
+- Ensure generated prompts match their requested token counts or fail explicitly when that target cannot be met. ([#69](https://github.com/jpreagan/llmnop/pull/69))
 - Report malformed or prematurely terminated streams as failed requests, and calculate content and reasoning timings consistently across supported APIs, leaving measurements absent when no qualifying text arrives. ([#70](https://github.com/jpreagan/llmnop/pull/70))
 
 ## [0.10.0]
