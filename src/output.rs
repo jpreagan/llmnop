@@ -235,14 +235,14 @@ pub fn print_summary_to_stdout(
     let mut total_tokens_vec = Vec::new();
 
     for br in successful_results {
-        inter_token_vec.push(br.inter_token_latency_s);
-        inter_event_vec.push(br.inter_event_latency_s);
-        ttft_vec.push(br.ttft.as_secs_f64());
+        inter_token_vec.extend(br.inter_token_latency_s);
+        inter_event_vec.extend(br.inter_event_latency_s);
+        ttft_vec.extend(br.ttft.map(|t| t.as_secs_f64()));
         if let Some(ttfo) = br.ttfo {
             ttfo_vec.push(ttfo.as_secs_f64());
         }
         e2e_vec.push(br.total_latency.as_secs_f64());
-        throughput_vec.push(br.throughput);
+        throughput_vec.extend(br.throughput);
         in_tokens_vec.push(br.input_tokens as f64);
         reasoning_tokens_vec.push(br.reasoning_tokens as f64);
         out_tokens_vec.push(br.output_tokens as f64);
@@ -411,7 +411,7 @@ pub fn write_results_json(
                 let mut metrics = BTreeMap::new();
                 metrics.insert(
                     "time_to_first_token".to_string(),
-                    metric_value_f64(br.ttft.as_secs_f64() * 1000.0, "ms"),
+                    metric_value_optional_f64(br.ttft.map(|t| t.as_secs_f64() * 1000.0), "ms"),
                 );
                 if let Some(ttfo) = br.ttfo {
                     metrics.insert(
@@ -425,15 +425,15 @@ pub fn write_results_json(
                 );
                 metrics.insert(
                     "inter_token_latency".to_string(),
-                    metric_value_f64(br.inter_token_latency_s * 1000.0, "ms"),
+                    metric_value_optional_f64(br.inter_token_latency_s.map(|s| s * 1000.0), "ms"),
                 );
                 metrics.insert(
                     "inter_event_latency".to_string(),
-                    metric_value_f64(br.inter_event_latency_s * 1000.0, "ms"),
+                    metric_value_optional_f64(br.inter_event_latency_s.map(|s| s * 1000.0), "ms"),
                 );
                 metrics.insert(
                     "output_token_throughput_per_request".to_string(),
-                    metric_value_f64(br.throughput, "tokens/sec/request"),
+                    metric_value_optional_f64(br.throughput, "tokens/sec/request"),
                 );
                 metrics.insert(
                     "input_sequence_length".to_string(),
@@ -581,13 +581,13 @@ fn build_summary(
 
     for br in successful_results {
         request_latency_ms.push(br.total_latency.as_secs_f64() * 1000.0);
-        ttft_ms.push(br.ttft.as_secs_f64() * 1000.0);
+        ttft_ms.extend(br.ttft.map(|t| t.as_secs_f64() * 1000.0));
         if let Some(ttfo) = br.ttfo {
             ttfo_ms.push(ttfo.as_secs_f64() * 1000.0);
         }
-        inter_token_ms.push(br.inter_token_latency_s * 1000.0);
-        inter_event_ms.push(br.inter_event_latency_s * 1000.0);
-        throughput_per_request.push(br.throughput);
+        inter_token_ms.extend(br.inter_token_latency_s.map(|s| s * 1000.0));
+        inter_event_ms.extend(br.inter_event_latency_s.map(|s| s * 1000.0));
+        throughput_per_request.extend(br.throughput);
         in_tokens.push(br.input_tokens as f64);
         out_tokens.push(br.output_tokens as f64);
         reasoning_tokens.push(br.reasoning_tokens as f64);
@@ -645,8 +645,8 @@ fn build_summary(
         .collect();
 
     BenchmarkSummary {
-        version: "2026-09-06-workload.1".to_string(),
-        schema_version: "2.1".to_string(),
+        version: "2026-09-06-streaming.1".to_string(),
+        schema_version: "2.2".to_string(),
         llmnop_version: env!("CARGO_PKG_VERSION").to_string(),
         benchmark_id: run_id.to_string(),
         benchmark_slug: benchmark_slug(config),
@@ -856,6 +856,13 @@ fn percentile(sorted_values: &[f64], pct: f64) -> f64 {
     sorted_values[idx]
 }
 
+fn metric_value_optional_f64(value: Option<f64>, unit: &str) -> MetricValue {
+    MetricValue {
+        value: serde_json::json!(value),
+        unit: unit.into(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1003,15 +1010,15 @@ mod tests {
         };
 
         let successful_results = vec![BenchmarkResult {
-            ttft: Duration::from_millis(100),
+            ttft: Some(Duration::from_millis(100)),
             ttfo: Some(Duration::from_millis(120)),
             total_latency: Duration::from_millis(900),
-            throughput: 75.0,
+            throughput: Some(75.0),
             input_tokens: 550,
             output_tokens: 120,
             reasoning_tokens: 30,
-            inter_token_latency_s: 0.01,
-            inter_event_latency_s: 0.02,
+            inter_token_latency_s: Some(0.01),
+            inter_event_latency_s: Some(0.02),
             total_tokens: 700,
             provider_usage: Some(crate::benchmark::ProviderUsage {
                 input_tokens: Some(550),
@@ -1038,8 +1045,8 @@ mod tests {
             1_700_000_001_000_000_000,
         );
 
-        assert_eq!(summary.schema_version, "2.1");
-        assert_eq!(summary.version, "2026-09-06-workload.1");
+        assert_eq!(summary.schema_version, "2.2");
+        assert_eq!(summary.version, "2026-09-06-streaming.1");
         assert_eq!(summary.request_latency.unit, "ms");
         assert_eq!(
             summary.output_token_throughput_per_request.unit,
