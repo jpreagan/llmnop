@@ -46,7 +46,7 @@ brew upgrade llmnop
 llmnop --url http://localhost:8000/v1 \
   --api-key token-abc123 \
   --model Qwen/Qwen3-4B-Instruct-2507 \
-  --mean-output-tokens 150
+  --output-cap 150
 ```
 
 Results print to stdout and save under the llmnop app results directory:
@@ -92,14 +92,14 @@ Control input and output token counts to simulate realistic workloads:
 
 | Flag                       | Default | Description                                               |
 | -------------------------- | ------- | --------------------------------------------------------- |
-| `--mean-input-tokens`      | 550     | Target prompt length in tokens                            |
-| `--stddev-input-tokens`    | 0       | Add variance to input length                              |
-| `--mean-output-tokens`     | none    | Mean output token cap to request                          |
-| `--stddev-output-tokens`   | 0       | Add variance to output length                             |
-| `--thinking-budget-tokens` | none    | Enable Anthropic Messages thinking with this token budget |
+| `--input-tokens`      | 550     | Target prompt length in tokens                            |
+| `--input-tokens-stddev`    | 0       | Add variance to input length                              |
+| `--output-cap`     | none    | Mean output token cap to request                          |
+| `--output-cap-stddev`   | 0       | Add variance to output length                             |
+| `--thinking-budget` | none    | Enable Anthropic Messages thinking with this token budget |
 
-For `--api messages`, `--mean-output-tokens` is required so llmnop can set `max_tokens` in the request.
-When `--thinking-budget-tokens` is set, it must be at least 1024 and smaller than `--mean-output-tokens`.
+For `--api messages`, `--output-cap` is required so llmnop can set `max_tokens` in the request.
+When `--thinking-budget` is set, it must be at least 1024 and smaller than `--output-cap`.
 
 ### Load Testing
 
@@ -144,7 +144,7 @@ llmnop --url http://localhost:8000/v1 --api-key token-abc123 \
 ```bash
 llmnop --url http://localhost:8000/v1 --api-key token-abc123 \
   --model Qwen/Qwen3-4B-Instruct-2507 \
-  --mean-output-tokens 150
+  --output-cap 150
 ```
 
 **Responses API:**
@@ -159,7 +159,7 @@ llmnop --api responses --url http://localhost:8000/v1 --api-key token-abc123 \
 ```bash
 llmnop --api messages --url http://localhost:8000/v1 --api-key token-abc123 \
   --model Qwen/Qwen3.6-27B \
-  --mean-output-tokens 4096
+  --output-cap 4096
 ```
 
 **JSON stdout for `jq` pipelines:**
@@ -212,3 +212,7 @@ The summary includes statistical breakdowns for latency and token metrics. `indi
 ## License
 
 [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0)
+
+Sonnet prompts use a fresh random window from the tokenized Shakespeare corpus.
+Prompt text must re-tokenize to its sampled target; generation fails if repair cannot achieve that length.
+The tokenizer may be a Hugging Face identifier or a local tokenizer JSON file.

@@ -22,7 +22,6 @@ pub enum OutputFormat {
 #[cfg(feature = "self-update")]
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Update llmnop (standalone installs only)
     Update,
 }
 
@@ -40,7 +39,6 @@ pub struct Args {
     #[command(subcommand)]
     pub command: Option<Command>,
 
-    // Endpoint
     #[arg(
         long,
         help = "Base URL (e.g., http://localhost:8000/v1)",
@@ -63,14 +61,13 @@ pub struct Args {
     )]
     pub api: ApiType,
 
-    // Request Shaping
     #[arg(
         long,
         default_value = "550",
         help = "Target input length",
         help_heading = "Request Shaping"
     )]
-    pub mean_input_tokens: u32,
+    pub input_tokens: u32,
 
     #[arg(
         long,
@@ -78,14 +75,14 @@ pub struct Args {
         help = "Input length variance",
         help_heading = "Request Shaping"
     )]
-    pub stddev_input_tokens: u32,
+    pub input_tokens_stddev: u32,
 
     #[arg(
         long,
         help = "Mean output token cap to request [default: none]",
         help_heading = "Request Shaping"
     )]
-    pub mean_output_tokens: Option<u32>,
+    pub output_cap: Option<u32>,
 
     #[arg(
         long,
@@ -93,16 +90,15 @@ pub struct Args {
         help = "Output length variance",
         help_heading = "Request Shaping"
     )]
-    pub stddev_output_tokens: u32,
+    pub output_cap_stddev: u32,
 
     #[arg(
         long,
         help = "Enable Anthropic Messages thinking with this token budget",
         help_heading = "Request Shaping"
     )]
-    pub thinking_budget_tokens: Option<u32>,
+    pub thinking_budget: Option<u32>,
 
-    // Load Testing
     #[arg(
         long,
         default_value = "10",
@@ -127,7 +123,6 @@ pub struct Args {
     )]
     pub timeout: u64,
 
-    // Tokenization
     #[arg(
         long,
         help = "Hugging Face tokenizer (defaults to model name)",
@@ -142,7 +137,6 @@ pub struct Args {
     )]
     pub use_server_token_count: bool,
 
-    // Output
     #[arg(
         long,
         value_enum,
@@ -199,24 +193,21 @@ impl Args {
     }
 
     pub fn validate(&self) -> Result<(), String> {
-        if matches!(self.api, ApiType::Messages) && self.mean_output_tokens.is_none() {
-            return Err("--mean-output-tokens is required for --api messages".to_string());
+        if matches!(self.api, ApiType::Messages) && self.output_cap.is_none() {
+            return Err("--output-cap is required for --api messages".to_string());
         }
-        if let Some(thinking_budget) = self.thinking_budget_tokens {
+        if let Some(thinking_budget) = self.thinking_budget {
             if !matches!(self.api, ApiType::Messages) {
-                return Err("--thinking-budget-tokens requires --api messages".to_string());
+                return Err("--thinking-budget requires --api messages".to_string());
             }
             if thinking_budget < 1024 {
-                return Err("--thinking-budget-tokens must be at least 1024".to_string());
+                return Err("--thinking-budget must be at least 1024".to_string());
             }
-            let mean_output_tokens = self
-                .mean_output_tokens
-                .expect("--mean-output-tokens is required for --api messages");
-            if mean_output_tokens <= thinking_budget {
-                return Err(
-                    "--mean-output-tokens must be greater than --thinking-budget-tokens"
-                        .to_string(),
-                );
+            let output_cap = self
+                .output_cap
+                .expect("--output-cap is required for --api messages");
+            if output_cap <= thinking_budget {
+                return Err("--output-cap must be greater than --thinking-budget".to_string());
             }
         }
         Ok(())
@@ -281,7 +272,7 @@ mod tests {
     }
 
     #[test]
-    fn test_messages_api_requires_mean_output_tokens() {
+    fn test_messages_api_requires_output_cap() {
         let args = Args::try_parse_from([
             "llmnop",
             "--api",
@@ -299,7 +290,7 @@ mod tests {
     }
 
     #[test]
-    fn test_messages_api_allows_mean_output_tokens() {
+    fn test_messages_api_allows_output_cap() {
         let args = Args::try_parse_from([
             "llmnop",
             "--api",
@@ -310,7 +301,7 @@ mod tests {
             "https://api.anthropic.com/v1",
             "--api-key",
             "test-key",
-            "--mean-output-tokens",
+            "--output-cap",
             "150",
         ])
         .expect("parse args");
@@ -330,9 +321,9 @@ mod tests {
             "http://localhost:8000/v1",
             "--api-key",
             "test-key",
-            "--mean-output-tokens",
+            "--output-cap",
             "1500",
-            "--thinking-budget-tokens",
+            "--thinking-budget",
             "1024",
         ])
         .expect("parse args");
@@ -352,9 +343,9 @@ mod tests {
             "https://api.anthropic.com/v1",
             "--api-key",
             "test-key",
-            "--mean-output-tokens",
+            "--output-cap",
             "1500",
-            "--thinking-budget-tokens",
+            "--thinking-budget",
             "1023",
         ])
         .expect("parse args");
@@ -363,7 +354,7 @@ mod tests {
     }
 
     #[test]
-    fn test_thinking_budget_requires_larger_mean_output_tokens() {
+    fn test_thinking_budget_requires_larger_output_cap() {
         let args = Args::try_parse_from([
             "llmnop",
             "--api",
@@ -374,9 +365,9 @@ mod tests {
             "https://api.anthropic.com/v1",
             "--api-key",
             "test-key",
-            "--mean-output-tokens",
+            "--output-cap",
             "1024",
-            "--thinking-budget-tokens",
+            "--thinking-budget",
             "1024",
         ])
         .expect("parse args");
@@ -396,9 +387,9 @@ mod tests {
             "https://api.anthropic.com/v1",
             "--api-key",
             "test-key",
-            "--mean-output-tokens",
+            "--output-cap",
             "1500",
-            "--thinking-budget-tokens",
+            "--thinking-budget",
             "1024",
         ])
         .expect("parse args");

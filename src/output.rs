@@ -645,8 +645,8 @@ fn build_summary(
         .collect();
 
     BenchmarkSummary {
-        version: "2026-05-03".to_string(),
-        schema_version: "2.0".to_string(),
+        version: "2026-09-06-workload.1".to_string(),
+        schema_version: "2.1".to_string(),
         llmnop_version: env!("CARGO_PKG_VERSION").to_string(),
         benchmark_id: run_id.to_string(),
         benchmark_slug: benchmark_slug(config),
@@ -1038,8 +1038,8 @@ mod tests {
             1_700_000_001_000_000_000,
         );
 
-        assert_eq!(summary.schema_version, "2.0");
-        assert_eq!(summary.version, "2026-05-03");
+        assert_eq!(summary.schema_version, "2.1");
+        assert_eq!(summary.version, "2026-09-06-workload.1");
         assert_eq!(summary.request_latency.unit, "ms");
         assert_eq!(
             summary.output_token_throughput_per_request.unit,
