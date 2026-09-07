@@ -6,6 +6,15 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 
+### Added
+
+- Restore `--results-dir` and `--no-progress`. ([#72](https://github.com/jpreagan/llmnop/pull/72))
+
+### Changed
+
+- Rename `individual_responses.jsonl` to `requests.jsonl` and revise the JSON result schema to include separate warmup outcomes, sample counts, and null values for unavailable measurements. Calculate summary statistics from completed measurement requests. ([#72](https://github.com/jpreagan/llmnop/pull/72))
+- Replace `--output-format`, `--json`, and `--quiet` with `--format table|json|none`, and rename `--use-server-token-count` to `--request-usage`. ([#72](https://github.com/jpreagan/llmnop/pull/72))
+
 ## [0.10.0]
 
 ### Added
