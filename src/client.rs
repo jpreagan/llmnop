@@ -2,7 +2,7 @@ use crate::args::ApiType;
 use anyhow::{Context, Result};
 use reqwest::{Client, Request};
 use serde::Serialize;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Failure {
@@ -32,7 +32,7 @@ pub fn request_body(
     model: &str,
     prompt: &str,
     cap: Option<u32>,
-    thinking: Option<u32>,
+    extra: Option<&Map<String, Value>>,
     usage: bool,
 ) -> Value {
     let mut body = json!({"model": model, "stream": true});
@@ -52,8 +52,8 @@ pub fn request_body(
     if api == ApiType::Chat && usage {
         body["stream_options"] = json!({"include_usage": true});
     }
-    if let Some(budget) = thinking {
-        body["thinking"] = json!({"type":"enabled", "budget_tokens":budget});
+    if let Some(extra) = extra {
+        body.as_object_mut().unwrap().extend(extra.clone());
     }
     body
 }

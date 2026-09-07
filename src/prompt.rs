@@ -4,23 +4,15 @@ use rand_distr::{Distribution, Normal};
 use tokenizers::Tokenizer;
 
 pub const CORPUS: &str = include_str!("assets/shakespeare.txt");
-pub fn sample_length(
-    rng: &mut impl rand::Rng,
-    mean: u32,
-    stddev: u32,
-    minimum: u32,
-) -> Result<u32> {
+pub fn sample_length(rng: &mut impl rand::Rng, mean: u32, stddev: u32) -> Result<u32> {
     if stddev == 0 {
-        return Ok(mean.max(minimum));
+        return Ok(mean.max(1));
     }
     let normal = Normal::new(f64::from(mean), f64::from(stddev))?;
     for _ in 0..10_000 {
         let sample = normal.sample(rng);
         if sample >= 0.0 && sample.ceil() <= f64::from(u32::MAX) {
-            let n = (sample.ceil() as u32).max(1);
-            if n >= minimum {
-                return Ok(n);
-            }
+            return Ok((sample.ceil() as u32).max(1));
         }
     }
     bail!("could not sample a length within the requested bounds")
@@ -179,10 +171,10 @@ mod tests {
     }
 
     #[test]
-    fn caps_stay_above_thinking_budget() {
+    fn sampled_lengths_are_positive() {
         let mut rng = StdRng::seed_from_u64(2);
         for _ in 0..1000 {
-            assert!(sample_length(&mut rng, 1100, 300, 1025).unwrap() > 1024);
+            assert!(sample_length(&mut rng, 1, 10).unwrap() > 0);
         }
     }
 }

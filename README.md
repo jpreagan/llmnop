@@ -138,9 +138,19 @@ and actual locally measured counts; it does not infer a limit finish merely from
 those counts. Reasoning's contribution to the provider's cap depends on its API
 and model.
 
-`--thinking-budget` enables Messages thinking. It must be at least 1024 and below
-the mean output cap. Every sampled cap also exceeds the thinking budget.
 A nonzero output-cap standard deviation requires an output cap.
+
+`--extra-inputs` accepts one JSON object of additional request fields. Fields are merged at the top level and sent unchanged on every request, including warmup. For example:
+
+```bash
+--extra-inputs '{"reasoning_effort":"high","temperature":0.7}'
+--extra-inputs '{"reasoning":{"effort":"high"}}'
+--extra-inputs '{"thinking":{"type":"enabled","budget_tokens":1024}}'
+```
+
+These examples configure Chat reasoning effort, Responses reasoning effort, and Messages thinking respectively. Supported fields, values, and defaults depend on the model and server; llmnop does not translate or validate their meaning. For Messages thinking, choose an output cap that satisfies the endpoint's requirements. Variable output caps are not adjusted around a thinking budget.
+
+The fields `model`, `stream`, `messages`, `input`, `prompt`, `max_tokens`, `max_completion_tokens`, `max_output_tokens`, and `stream_options` are reserved and rejected, even when the corresponding option is omitted. Use llmnop's workload and usage controls for those fields. Additional fields are saved verbatim under `configuration.extra_inputs` in `summary.json`; keep authentication credentials in `--api-key`.
 
 `--tokenizer` accepts a Hugging Face identifier or a local `tokenizer.json` file.
 The default identifier is the model name. Tokenizer truncation and padding are
@@ -228,7 +238,7 @@ becomes `requests.jsonl`.
 | `--stddev-input-tokens` | `--input-tokens-stddev` |
 | `--mean-output-tokens` | `--output-cap` |
 | `--stddev-output-tokens` | `--output-cap-stddev` |
-| `--thinking-budget-tokens` | `--thinking-budget` |
+| `--thinking-budget-tokens`, `--thinking-budget` | `--extra-inputs '{"thinking":{"type":"enabled","budget_tokens":1024}}'` |
 | `--max-num-completed-requests` | `--requests`, `-n` |
 | `--num-concurrent-requests` | `--concurrency`, `-c` |
 | `--timeout` | `--request-timeout` (now a per-request deadline) |

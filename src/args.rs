@@ -3,6 +3,7 @@ use clap::builder::styling::{AnsiColor, Effects};
 use clap::error::ErrorKind;
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use serde::Serialize;
+use serde_json::{Map, Value};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -32,6 +33,28 @@ const STYLES: Styles = Styles::styled()
     .usage(AnsiColor::Green.on_default().effects(Effects::BOLD))
     .literal(AnsiColor::Cyan.on_default().effects(Effects::BOLD))
     .placeholder(AnsiColor::Cyan.on_default());
+
+fn parse_extra_inputs(input: &str) -> Result<Map<String, Value>, String> {
+    let extra: Map<String, Value> =
+        serde_json::from_str(input).map_err(|e| format!("expected a JSON object: {e}"))?;
+    for key in extra.keys() {
+        if matches!(
+            key.as_str(),
+            "model"
+                | "stream"
+                | "messages"
+                | "input"
+                | "prompt"
+                | "max_tokens"
+                | "max_completion_tokens"
+                | "max_output_tokens"
+                | "stream_options"
+        ) {
+            return Err(format!("{key} is controlled by llmnop"));
+        }
+    }
+    Ok(extra)
+}
 
 #[derive(Parser, Debug, Serialize)]
 #[command(version, about, long_about = None, styles = STYLES, subcommand_negates_reqs = true)]
@@ -95,8 +118,8 @@ pub struct Args {
         help_heading = "Workload"
     )]
     pub output_cap_stddev: u32,
-    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u32).range(1024..), help = "Messages API thinking-token budget", help_heading = "Workload")]
-    pub thinking_budget: Option<u32>,
+    #[arg(long, value_name = "JSON", value_parser = parse_extra_inputs, help = "Additional request fields as a JSON object", help_heading = "Workload")]
+    pub extra_inputs: Option<Map<String, Value>>,
     #[arg(short = 'n', long, value_name = "N", default_value_t = 10, value_parser = clap::value_parser!(u32).range(1..), help = "Measured request attempts", help_heading = "Run")]
     pub requests: u32,
     #[arg(short = 'c', long, value_name = "N", default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..), help = "Maximum simultaneous requests", help_heading = "Run")]
@@ -173,14 +196,6 @@ impl Args {
         if self.output_cap_stddev > 0 && self.output_cap.is_none() {
             return Err(invalid("--output-cap-stddev requires --output-cap"));
         }
-        if let Some(budget) = self.thinking_budget {
-            if self.api != ApiType::Messages {
-                return Err(invalid("--thinking-budget requires --api messages"));
-            }
-            if self.output_cap.is_none_or(|cap| cap <= budget) {
-                return Err(invalid("--output-cap must exceed --thinking-budget"));
-            }
-        }
         if Duration::try_from_secs_f64(self.request_timeout).is_err() || self.request_timeout <= 0.0
         {
             return Err(invalid(
@@ -214,18 +229,9 @@ mod tests {
             vec!["--input-tokens", "0"],
             vec!["--output-cap", "0"],
             vec!["--api", "messages"],
-            vec!["--thinking-budget", "1024"],
             vec!["--output-cap-stddev", "1"],
             vec!["--request-timeout", "NaN"],
             vec!["--request-timeout", "0"],
-            vec![
-                "--api",
-                "messages",
-                "--output-cap",
-                "1024",
-                "--thinking-budget",
-                "1024",
-            ],
         ] {
             let mut argv = vec!["llmnop", "--url", "http://localhost/v1", "--model", "test"];
             argv.extend(flags);
@@ -239,7 +245,45 @@ mod tests {
         assert_eq!(help.kind(), ErrorKind::DisplayHelp);
         assert!(help.to_string().contains("standalone installs only"));
         assert!(!help.to_string().contains("env:"));
+        assert!(help.to_string().contains("--extra-inputs <JSON>"));
+        assert!(!help.to_string().contains("--thinking-budget"));
         assert!(Args::try_parse_from(["llmnop", "update"]).is_ok());
+    }
+
+    #[test]
+    fn extra_inputs_require_an_object_and_protect_benchmark_fields() {
+        for input in ["null", "[]", "true", "42", "\"text\"", "{", "{} trailing"] {
+            assert!(Args::try_parse_from(["llmnop", "--extra-inputs", input]).is_err());
+        }
+        for api in ["chat", "responses", "messages"] {
+            for key in [
+                "model",
+                "stream",
+                "messages",
+                "input",
+                "prompt",
+                "max_tokens",
+                "max_completion_tokens",
+                "max_output_tokens",
+                "stream_options",
+            ] {
+                let input = serde_json::json!({key: null}).to_string();
+                let error =
+                    Args::try_parse_from(["llmnop", "--api", api, "--extra-inputs", &input])
+                        .unwrap_err();
+                assert_eq!(error.kind(), ErrorKind::ValueValidation);
+                assert!(
+                    error
+                        .to_string()
+                        .contains(&format!("{key} is controlled by llmnop"))
+                );
+            }
+        }
+        assert!(
+            Args::try_parse_from(["llmnop", "--extra-inputs", "{}", "--extra-inputs", "{}"])
+                .is_err()
+        );
+        assert!(Args::try_parse_from(["llmnop", "--thinking-budget", "1024"]).is_err());
     }
 
     #[test]
