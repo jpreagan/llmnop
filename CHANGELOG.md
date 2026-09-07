@@ -6,6 +6,10 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 
+### Fixed
+
+- Report malformed or prematurely terminated streams as failed requests, and calculate content and reasoning timings consistently across supported APIs, leaving measurements absent when no qualifying text arrives. ([#70](https://github.com/jpreagan/llmnop/pull/70))
+
 ## [0.10.0]
 
 ### Added
