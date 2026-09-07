@@ -1,13 +1,10 @@
 use super::*;
 use crate::benchmark::Status;
-use crate::benchmark::{Phase, PreparedRequest};
 use serde_json::Value;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
-use tokio::sync::watch;
 use tokio::task::JoinHandle;
-use tokio::task::JoinSet;
 
 struct Reply {
     status: u16,
@@ -304,6 +301,77 @@ async fn empty_and_tool_only_completions_have_no_text_timings() {
 }
 
 #[tokio::test]
+async fn scheduler_bounds_concurrency_counts_failures_and_exports_recomputable_results() {
+    let mut replies: Vec<_> = (0..5)
+        .map(|_| Reply {
+            status: 200,
+            chunks: vec![(
+                Duration::from_millis(40),
+                format!("{CONTENT}{DONE}").into_bytes(),
+            )],
+        })
+        .collect();
+    replies[1].status = 503;
+    let (url, task, peak) = server(replies).await;
+    let args = Args::parse_from([
+        "llmnop",
+        "--url",
+        &url,
+        "--model",
+        "test",
+        "--requests",
+        "5",
+        "--concurrency",
+        "2",
+        "--quiet",
+    ]);
+    let client = client::http_client().unwrap();
+    let tokenizer = Arc::new(tokens::test_tokenizer());
+    let requests = (0..5)
+        .map(|i| prepared(&client, args::ApiType::Chat, &url, i))
+        .collect();
+    let (_tx, rx) = watch::channel(false);
+    let parent = std::env::temp_dir().join(format!("llmnop-test-{}", benchmark::unix_time_ns()));
+    let mut writer = ResultsWriter::new(Some(&parent)).await.unwrap();
+    let records = run_phase(&args, &client, &tokenizer, requests, &rx, &mut writer)
+        .await
+        .unwrap();
+    assert_eq!(records.len(), 5);
+    assert_eq!(peak.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        records
+            .iter()
+            .filter(|r| r.status == Status::Completed)
+            .count(),
+        4
+    );
+    assert_eq!(
+        records
+            .iter()
+            .filter(|r| r.http_status == Some(503))
+            .count(),
+        1
+    );
+    let mut ids: Vec<_> = records.iter().map(|r| r.request_id).collect();
+    ids.sort_unstable();
+    assert_eq!(ids, vec![0, 1, 2, 3, 4]);
+    let exported = tokio::fs::read_to_string(writer.directory.join("requests.jsonl"))
+        .await
+        .unwrap();
+    let rows: Vec<Value> = exported
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert_eq!(rows.len(), 5);
+    assert_eq!(
+        rows.iter().filter(|r| r["status"] == "completed").count(),
+        4
+    );
+    assert_eq!(finish_server(task).await.len(), 5);
+    tokio::fs::remove_dir_all(parent).await.unwrap();
+}
+
+#[tokio::test]
 async fn streamed_refusals_count_as_visible_content() {
     for (api, payload) in [
         (
@@ -332,4 +400,78 @@ async fn streamed_refusals_count_as_visible_content() {
         assert!(record.metrics.ttfo_ms.is_some());
         finish_server(task).await;
     }
+}
+
+#[tokio::test]
+async fn warmup_finishes_before_measurement_and_deadlines_free_slots() {
+    let replies = vec![
+        Reply::sse(&format!("{CONTENT}{DONE}")),
+        Reply::sse(&format!("{CONTENT}{DONE}")),
+        Reply::delayed(CONTENT, DONE),
+        Reply::sse(&format!("{CONTENT}{DONE}")),
+    ];
+    let (url, task, _) = server(replies).await;
+    let args = Args::parse_from([
+        "llmnop",
+        "--url",
+        &url,
+        "--model",
+        "test",
+        "--requests",
+        "2",
+        "--concurrency",
+        "1",
+        "--warmup",
+        "2",
+        "--request-timeout",
+        "0.1",
+    ]);
+    let client = client::http_client().unwrap();
+    let tokenizer = Arc::new(tokens::test_tokenizer());
+    let (_tx, rx) = watch::channel(false);
+    let parent = std::env::temp_dir().join(format!("llmnop-phases-{}", benchmark::unix_time_ns()));
+    let mut writer = ResultsWriter::new(Some(&parent)).await.unwrap();
+    let warmup = (0..2)
+        .map(|i| {
+            let mut r = prepared(&client, args::ApiType::Chat, &url, i);
+            r.phase = Phase::Warmup;
+            r
+        })
+        .collect();
+    let warmup = run_phase(&args, &client, &tokenizer, warmup, &rx, &mut writer)
+        .await
+        .unwrap();
+    assert!(
+        warmup
+            .iter()
+            .all(|r| r.phase == Phase::Warmup && r.status == Status::Completed)
+    );
+    let measured = (2..4)
+        .map(|i| prepared(&client, args::ApiType::Chat, &url, i))
+        .collect();
+    let measured = run_phase(&args, &client, &tokenizer, measured, &rx, &mut writer)
+        .await
+        .unwrap();
+    assert_eq!(measured.len(), 2);
+    assert!(
+        warmup.iter().map(|r| r.end).max().unwrap()
+            <= measured.iter().map(|r| r.start).min().unwrap()
+    );
+    let timed_out = measured
+        .iter()
+        .find(|r| r.status == Status::TimedOut)
+        .unwrap();
+    assert_eq!(timed_out.request_id, 2);
+    assert_eq!(timed_out.metrics.content_tokens, Some(2));
+    assert!(
+        measured
+            .iter()
+            .any(|r| r.request_id == 3 && r.status == Status::Completed)
+    );
+    let exported = tokio::fs::read_to_string(writer.directory.join("requests.jsonl"))
+        .await
+        .unwrap();
+    assert_eq!(exported.lines().count(), 4);
+    assert_eq!(finish_server(task).await.len(), 4);
+    tokio::fs::remove_dir_all(parent).await.unwrap();
 }

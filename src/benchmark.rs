@@ -1,7 +1,6 @@
 use crate::args::ApiType;
 use crate::client::{self, Event, Failure};
 use crate::tokens;
-use anyhow::{Result, anyhow};
 use eventsource_stream::Eventsource;
 use futures::StreamExt;
 use reqwest::{Client, Request};
@@ -27,6 +26,7 @@ static CLOCK: LazyLock<(Instant, u64)> = LazyLock::new(|| (Instant::now(), unix_
 #[serde(rename_all = "snake_case")]
 pub enum Phase {
     Measurement,
+    Warmup,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -335,133 +335,6 @@ pub async fn capture(
         },
         observation,
     }
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct BenchmarkResult {
-    pub ttft: Option<Duration>,
-    pub ttfo: Option<Duration>,
-    pub total_latency: Duration,
-    pub throughput: Option<f64>,
-    pub input_tokens: u32,
-    pub output_tokens: u32,
-    pub reasoning_tokens: u32,
-    pub inter_token_latency_s: Option<f64>,
-    pub inter_event_latency_s: Option<f64>,
-    pub total_tokens: u32,
-    pub provider_usage: Option<ProviderUsage>,
-    pub request_start_unix_ns: u64,
-    pub request_end_unix_ns: u64,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ProviderUsage {
-    pub input_tokens: Option<u32>,
-    pub output_tokens: Option<u32>,
-    pub total_tokens: Option<u32>,
-    pub reasoning_tokens: Option<u32>,
-}
-
-#[derive(Debug, Clone)]
-pub struct BenchmarkRequest {
-    pub model: String,
-    pub url: String,
-    pub api_key: Option<String>,
-    pub timeout: Duration,
-    pub prompt: String,
-    pub max_tokens: Option<u32>,
-    pub thinking_budget_tokens: Option<u32>,
-    pub tokenizer: std::sync::Arc<tokenizers::Tokenizer>,
-    pub use_server_token_count: bool,
-}
-
-impl BenchmarkResult {
-    pub fn from_record(record: &RequestRecord) -> Result<Self> {
-        if record.status != Status::Completed {
-            return Err(anyhow!(
-                "{}",
-                record
-                    .error
-                    .as_ref()
-                    .map(|e| e.message.as_str())
-                    .unwrap_or("request failed")
-            ));
-        }
-        let m = &record.metrics;
-        let provider_usage = record.provider_usage.as_ref().map(|u| {
-            let n = |a: &str, b: &str| {
-                u.pointer(a)
-                    .or_else(|| u.pointer(b))
-                    .and_then(Value::as_u64)
-                    .and_then(|n| u32::try_from(n).ok())
-            };
-            ProviderUsage {
-                input_tokens: n("/input_tokens", "/prompt_tokens"),
-                output_tokens: n("/output_tokens", "/completion_tokens"),
-                total_tokens: n("/total_tokens", "/total_tokens"),
-                reasoning_tokens: n(
-                    "/output_tokens_details/reasoning_tokens",
-                    "/completion_tokens_details/reasoning_tokens",
-                ),
-            }
-        });
-        let output_tokens = u32::try_from(m.content_tokens.unwrap())?;
-        let reasoning_tokens = u32::try_from(m.reasoning_tokens.unwrap())?;
-        let input_tokens = u32::try_from(m.input_tokens)?;
-        Ok(Self {
-            ttft: m.ttft_ms.map(|n| Duration::from_secs_f64(n / 1000.0)),
-            ttfo: m.ttfo_ms.map(|n| Duration::from_secs_f64(n / 1000.0)),
-            total_latency: record.end.duration_since(record.start),
-            throughput: m.generation_tokens_per_second,
-            input_tokens,
-            output_tokens,
-            reasoning_tokens,
-            inter_token_latency_s: m.mean_inter_token_latency_ms.map(|n| n / 1000.0),
-            inter_event_latency_s: m.mean_inter_event_latency_ms.map(|n| n / 1000.0),
-            total_tokens: input_tokens
-                .checked_add(output_tokens)
-                .and_then(|n| n.checked_add(reasoning_tokens))
-                .ok_or_else(|| anyhow!("token total overflow"))?,
-            provider_usage,
-            request_start_unix_ns: record.start_time_unix_ns,
-            request_end_unix_ns: record.end_time_unix_ns,
-        })
-    }
-}
-
-pub async fn run_benchmark(
-    client: &Client,
-    api: ApiType,
-    request: BenchmarkRequest,
-) -> Result<BenchmarkResult> {
-    let body = client::request_body(
-        api,
-        &request.model,
-        &request.prompt,
-        request.max_tokens,
-        request.thinking_budget_tokens,
-        request.use_server_token_count,
-    );
-    let input_tokens = tokens::count(&request.tokenizer, &request.prompt)?;
-    let prepared = PreparedRequest {
-        id: 0,
-        phase: Phase::Measurement,
-        input_target: input_tokens.try_into()?,
-        input_tokens,
-        output_cap: request.max_tokens,
-        request: client::build_request(
-            client,
-            api,
-            &request.url,
-            request.api_key.as_deref(),
-            &body,
-        )?,
-    };
-    let (_cancel_tx, cancel) = watch::channel(false);
-    let record = capture(client.clone(), api, prepared, request.timeout, cancel)
-        .await
-        .finish(&request.tokenizer);
-    BenchmarkResult::from_record(&record)
 }
 
 #[cfg(test)]
