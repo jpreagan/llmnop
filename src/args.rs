@@ -3,6 +3,7 @@ use clap::builder::styling::{AnsiColor, Effects};
 use clap::error::ErrorKind;
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use serde::Serialize;
+use std::path::PathBuf;
 use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, ValueEnum, Serialize, PartialEq, Eq)]
@@ -116,34 +117,35 @@ pub struct Args {
         help_heading = "Run"
     )]
     pub request_timeout: f64,
-    #[arg(long, value_enum, default_value = "table", help_heading = "Output")]
-    #[serde(skip)]
-    pub output_format: OutputFormat,
-    #[arg(long, help = "Emit summary JSON", help_heading = "Output")]
-    #[serde(skip)]
-    pub json: bool,
-    #[arg(short = 'q', long, help = "Suppress stdout", help_heading = "Output")]
-    #[serde(skip)]
-    pub quiet: bool,
     #[arg(
         long,
-        help = "Request provider-reported usage",
+        value_enum,
+        default_value = "table",
+        help = "Stdout format",
         help_heading = "Output"
     )]
-    pub use_server_token_count: bool,
+    #[serde(skip)]
+    pub format: OutputFormat,
+    #[arg(
+        long,
+        value_name = "DIR",
+        help = "Parent directory for per-run results [default: platform results directory]",
+        help_heading = "Output"
+    )]
+    #[serde(skip)]
+    pub results_dir: Option<PathBuf>,
+    #[arg(
+        long,
+        help = "Ask the endpoint to include optional token usage",
+        help_heading = "Output"
+    )]
+    pub request_usage: bool,
+    #[arg(long, help = "Suppress progress on stderr", help_heading = "Output")]
+    #[serde(skip)]
+    pub no_progress: bool,
 }
 
 impl Args {
-    pub fn effective_output_format(&self) -> OutputFormat {
-        if self.quiet {
-            OutputFormat::None
-        } else if self.json {
-            OutputFormat::Json
-        } else {
-            self.output_format
-        }
-    }
-
     pub fn validate(&self) -> Result<(), clap::Error> {
         let invalid = |message: &str| Self::command().error(ErrorKind::ValueValidation, message);
         for (name, value) in [("--url", &self.url), ("--model", &self.model)] {
