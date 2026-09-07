@@ -10,15 +10,15 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 - Support local tokenizer JSON files through `--tokenizer`. ([#69](https://github.com/jpreagan/llmnop/pull/69))
 - Add `--warmup` for requests completed before measurement and excluded from benchmark statistics. ([#71](https://github.com/jpreagan/llmnop/pull/71))
-- Restore `--results-dir`. ([#72](https://github.com/jpreagan/llmnop/pull/72))
+- Add `--results-dir` to choose where benchmark results are saved. ([#72](https://github.com/jpreagan/llmnop/pull/72))
 
 ### Changed
 
-- Replace `--thinking-budget` with `--extra-inputs` for additional API request settings, and save those settings in the run configuration. ([#74](https://github.com/jpreagan/llmnop/pull/74))
-- Rename `--mean-input-tokens` to `--input-tokens`, `--stddev-input-tokens` to `--input-tokens-stddev`, `--mean-output-tokens` to `--output-cap`, `--stddev-output-tokens` to `--output-cap-stddev`, and `--thinking-budget-tokens` to `--thinking-budget`. ([#69](https://github.com/jpreagan/llmnop/pull/69))
-- Replace `--max-num-completed-requests` and `--num-concurrent-requests` with `--requests` and `--concurrency`. Failed attempts count toward the request budget and are not retried. ([#71](https://github.com/jpreagan/llmnop/pull/71))
+- Replace `--thinking-budget-tokens` with `--extra-inputs` for additional API request settings, and save those settings in the run configuration. ([#74](https://github.com/jpreagan/llmnop/pull/74))
+- Rename `--mean-input-tokens` to `--input-tokens`, `--stddev-input-tokens` to `--input-tokens-stddev`, `--mean-output-tokens` to `--output-cap`, and `--stddev-output-tokens` to `--output-cap-stddev`. ([#69](https://github.com/jpreagan/llmnop/pull/69))
+- Replace `--max-num-completed-requests` and `--num-concurrent-requests` with `--requests` and `--concurrency`. ([#71](https://github.com/jpreagan/llmnop/pull/71))
 - Replace the benchmark-wide `--timeout` with a per-request `--request-timeout`. Save partial results on timeout or interruption. ([#71](https://github.com/jpreagan/llmnop/pull/71))
-- Rename `individual_responses.jsonl` to `requests.jsonl` and revise the JSON result schema to include separate warmup outcomes, sample counts, and null values for unavailable measurements. Calculate summary statistics from completed measurement requests. ([#72](https://github.com/jpreagan/llmnop/pull/72))
+- Rename `individual_responses.jsonl` to `requests.jsonl` and update the JSON result schema from `2.0` to `3.0`, with separate warmup outcomes, per-metric sample counts, and null values for unavailable measurements. Exclude warmup and unavailable measurements from summary metric statistics. ([#72](https://github.com/jpreagan/llmnop/pull/72))
 - Replace `--output-format`, `--json`, and `--quiet` with `--format table|json|none`, and rename `--use-server-token-count` to `--request-usage`. ([#72](https://github.com/jpreagan/llmnop/pull/72))
 
 ### Removed
@@ -27,6 +27,8 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Fixed
 
+- Calculate per-request generation rate as `(generated_tokens - 1) / generation_window_seconds` instead of `generated_tokens / generation_window_seconds`, making it the reciprocal of estimated inter-token latency. ([#70](https://github.com/jpreagan/llmnop/pull/70))
+- Return a nonzero exit status when benchmark requests fail or time out, and exit with status `130` when interrupted. ([#71](https://github.com/jpreagan/llmnop/pull/71))
 - Ensure generated prompts match their requested token counts or fail explicitly when that target cannot be met. ([#69](https://github.com/jpreagan/llmnop/pull/69))
 - Report malformed or prematurely terminated streams as failed requests, and calculate content and reasoning timings consistently across supported APIs, leaving measurements absent when no qualifying text arrives. ([#70](https://github.com/jpreagan/llmnop/pull/70))
 
