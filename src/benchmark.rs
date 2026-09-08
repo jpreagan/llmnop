@@ -1,32 +1,353 @@
 use crate::args::ApiType;
-use crate::client::ApiClient;
-use crate::client::anthropic::messages::{
-    MessagesClient, MessagesContentDelta, MessagesStreamEvent, MessagesUsage,
-    create_messages_stream,
-};
-use crate::client::openai::chat::create_chat_completion_stream;
-use crate::client::openai::responses::{
-    ResponsesStreamEvent, ResponsesUsage, create_responses_stream,
-};
+use crate::client::{self, Event, Failure};
 use crate::tokens;
 use anyhow::{Result, anyhow};
-use async_openai::types::chat::CompletionUsage;
-use async_openai::{Client, config::OpenAIConfig};
+use eventsource_stream::Eventsource;
 use futures::StreamExt;
+use reqwest::{Client, Request};
 use serde::Serialize;
-use std::time::{Duration, Instant};
+use serde_json::Value;
+use std::sync::LazyLock;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use tokenizers::Tokenizer;
+use tokio::sync::watch;
+
+pub fn unix_time_ns() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock precedes Unix epoch")
+        .as_nanos()
+        .try_into()
+        .expect("Unix timestamp exceeds u64")
+}
+
+static CLOCK: LazyLock<(Instant, u64)> = LazyLock::new(|| (Instant::now(), unix_time_ns()));
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Phase {
+    Measurement,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Status {
+    Completed,
+    Failed,
+    TimedOut,
+    Cancelled,
+}
+
+pub struct PreparedRequest {
+    pub id: u32,
+    pub phase: Phase,
+    pub input_target: u32,
+    pub input_tokens: u64,
+    pub output_cap: Option<u32>,
+    pub request: Request,
+}
+
+#[derive(Debug, Default, Serialize)]
+pub struct Metrics {
+    pub request_latency_ms: Option<f64>,
+    pub ttft_ms: Option<f64>,
+    pub ttfo_ms: Option<f64>,
+    pub generation_window_ms: Option<f64>,
+    pub generation_tokens_per_second: Option<f64>,
+    pub mean_inter_token_latency_ms: Option<f64>,
+    pub mean_inter_event_latency_ms: Option<f64>,
+    pub max_inter_event_latency_ms: Option<f64>,
+    pub input_tokens: u64,
+    pub content_tokens: Option<u64>,
+    pub reasoning_tokens: Option<u64>,
+    pub generated_tokens: Option<u64>,
+    pub delivery_events: u64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RequestRecord {
+    pub request_id: u32,
+    pub phase: Phase,
+    pub start_time_unix_ns: u64,
+    pub end_time_unix_ns: u64,
+    pub elapsed_ms: f64,
+    pub status: Status,
+    pub http_status: Option<u16>,
+    pub finish_reason: Option<String>,
+    pub input_target_tokens: u32,
+    pub output_cap: Option<u32>,
+    pub metrics: Metrics,
+    pub reasoning_kinds: Vec<&'static str>,
+    pub provider_usage: Option<Value>,
+    pub error: Option<Failure>,
+    #[serde(skip)]
+    pub start: Instant,
+    #[serde(skip)]
+    pub end: Instant,
+}
+
+#[derive(Default)]
+struct Observation {
+    content: String,
+    reasoning: String,
+    reasoning_kinds: Vec<&'static str>,
+    first: Option<Instant>,
+    first_content: Option<Instant>,
+    last: Option<Instant>,
+    events: u64,
+    max_gap: Duration,
+    usage: Option<Value>,
+    finish_reason: Option<String>,
+    http_status: Option<u16>,
+}
+
+fn merge_usage(target: &mut Value, update: &Value) {
+    if let (Some(target), Some(update)) = (target.as_object_mut(), update.as_object()) {
+        for (key, value) in update {
+            if !value.is_null() {
+                match target.get_mut(key) {
+                    Some(old) if old.is_object() && value.is_object() => merge_usage(old, value),
+                    _ => {
+                        target.insert(key.clone(), value.clone());
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl Observation {
+    fn accept(&mut self, event: &Event<'_>, now: Instant) {
+        if !event.content.is_empty() || !event.reasoning.is_empty() {
+            self.first.get_or_insert(now);
+            if let Some(previous) = self.last {
+                self.max_gap = self.max_gap.max(now.duration_since(previous));
+            }
+            self.last = Some(now);
+            self.events += 1;
+        }
+        if !event.content.is_empty() {
+            self.first_content.get_or_insert(now);
+            self.content.push_str(event.content);
+        }
+        if !event.reasoning.is_empty() {
+            self.reasoning.push_str(event.reasoning);
+            if let Some(kind) = event.reasoning_kind {
+                if !self.reasoning_kinds.contains(&kind) {
+                    self.reasoning_kinds.push(kind);
+                }
+            }
+        }
+        if let Some(usage) = event.usage {
+            let current = self.usage.get_or_insert_with(|| serde_json::json!({}));
+            merge_usage(current, usage);
+        }
+        if let Some(reason) = event.finish_reason {
+            self.finish_reason = Some(reason.to_owned());
+        }
+    }
+
+    fn metrics(
+        &self,
+        start: Instant,
+        end: Instant,
+        completed: bool,
+        input: u64,
+        content: Option<u64>,
+        reasoning: Option<u64>,
+    ) -> Metrics {
+        let window = self
+            .first
+            .zip(self.last)
+            .map(|(a, b)| b.duration_since(a).as_secs_f64());
+        let generated = content.zip(reasoning).map(|(a, b)| a + b);
+        let per_token = window
+            .zip(generated)
+            .filter(|(seconds, n)| *seconds > 0.0 && *n > 1)
+            .map(|(seconds, n)| seconds / (n - 1) as f64);
+        Metrics {
+            request_latency_ms: completed.then(|| end.duration_since(start).as_secs_f64() * 1000.0),
+            ttft_ms: self
+                .first
+                .map(|t| t.duration_since(start).as_secs_f64() * 1000.0),
+            ttfo_ms: self
+                .first_content
+                .map(|t| t.duration_since(start).as_secs_f64() * 1000.0),
+            generation_window_ms: window.map(|s| s * 1000.0),
+            generation_tokens_per_second: per_token.map(|s| 1.0 / s),
+            mean_inter_token_latency_ms: per_token.map(|s| s * 1000.0),
+            mean_inter_event_latency_ms: window
+                .filter(|_| self.events > 1)
+                .map(|s| s * 1000.0 / (self.events - 1) as f64),
+            max_inter_event_latency_ms: (self.events > 1)
+                .then_some(self.max_gap.as_secs_f64() * 1000.0),
+            input_tokens: input,
+            content_tokens: content,
+            reasoning_tokens: reasoning,
+            generated_tokens: generated,
+            delivery_events: self.events,
+        }
+    }
+}
+
+pub struct Captured {
+    record: RequestRecord,
+    observation: Observation,
+}
+
+impl Captured {
+    pub fn finish(mut self, tokenizer: &Tokenizer) -> RequestRecord {
+        let content = tokens::count(tokenizer, &self.observation.content);
+        let reasoning = tokens::count(tokenizer, &self.observation.reasoning);
+        if let Some(error) = content.as_ref().err().or(reasoning.as_ref().err()) {
+            self.record.status = Status::Failed;
+            self.record.error = Some(Failure::new("tokenization", error));
+        }
+        self.record.metrics = self.observation.metrics(
+            self.record.start,
+            self.record.end,
+            self.record.status == Status::Completed,
+            self.record.metrics.input_tokens,
+            content.ok(),
+            reasoning.ok(),
+        );
+        self.record.reasoning_kinds = self.observation.reasoning_kinds;
+        self.record.provider_usage = self.observation.usage;
+        self.record.finish_reason = self.observation.finish_reason;
+        self.record.http_status = self.observation.http_status;
+        self.record
+    }
+}
+
+async fn receive(
+    client: &Client,
+    api: ApiType,
+    request: Request,
+    observation: &mut Observation,
+) -> Result<(), Failure> {
+    let response = client
+        .execute(request)
+        .await
+        .map_err(|e| Failure::new("transport", e.without_url()))?;
+    observation.http_status = Some(response.status().as_u16());
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|e| Failure::new("transport", e.without_url()))?;
+        return Err(Failure::new("http", format!("HTTP {status}: {body}")));
+    }
+    if !response
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| {
+            v.split(';')
+                .next()
+                .is_some_and(|v| v.trim().eq_ignore_ascii_case("text/event-stream"))
+        })
+    {
+        return Err(Failure::new(
+            "protocol",
+            "expected Content-Type: text/event-stream",
+        ));
+    }
+    let mut stream = response.bytes_stream().eventsource();
+    while let Some(event) = stream.next().await {
+        let now = Instant::now();
+        let event = event.map_err(|e| Failure::new("stream", e))?;
+        if event.data.trim().is_empty() {
+            continue;
+        }
+        if event.data.trim() == "[DONE]" {
+            if api == ApiType::Chat {
+                return Ok(());
+            }
+            return Err(Failure::new(
+                "protocol",
+                "missing API completion event before [DONE]",
+            ));
+        }
+        let value: Value =
+            serde_json::from_str(&event.data).map_err(|e| Failure::new("protocol", e))?;
+        let event = client::parse_event(api, &value)?;
+        observation.accept(&event, now);
+        if let Some(failure) = event.failure {
+            return Err(failure);
+        }
+        if event.done {
+            return Ok(());
+        }
+    }
+    Err(Failure::new(
+        "protocol",
+        "stream ended without its completion event",
+    ))
+}
+
+pub async fn capture(
+    client: Client,
+    api: ApiType,
+    prepared: PreparedRequest,
+    timeout: Duration,
+    mut cancel: watch::Receiver<bool>,
+) -> Captured {
+    let (origin, unix_ns) = *CLOCK;
+    let start = Instant::now();
+    let start_time_unix_ns = unix_ns
+        + u64::try_from(start.duration_since(origin).as_nanos())
+            .expect("run duration exceeds u64 nanoseconds");
+    let mut observation = Observation::default();
+    let (status, error) = tokio::select! {
+        biased;
+        _ = cancel.wait_for(|cancelled| *cancelled) => (Status::Cancelled, Some(Failure::new("cancelled", "interrupted"))),
+        result = tokio::time::timeout(timeout, receive(&client, api, prepared.request, &mut observation)) => match result {
+            Ok(Ok(())) => (Status::Completed, None),
+            Ok(Err(error)) => (Status::Failed, Some(error)),
+            Err(_) => (Status::TimedOut, Some(Failure::new("timeout", "request deadline exceeded"))),
+        }
+    };
+    let end = Instant::now();
+    let elapsed = end.duration_since(start);
+    Captured {
+        record: RequestRecord {
+            request_id: prepared.id,
+            phase: prepared.phase,
+            start_time_unix_ns,
+            end_time_unix_ns: start_time_unix_ns
+                .saturating_add(elapsed.as_nanos().try_into().unwrap_or(u64::MAX)),
+            elapsed_ms: elapsed.as_secs_f64() * 1000.0,
+            status,
+            http_status: None,
+            finish_reason: None,
+            input_target_tokens: prepared.input_target,
+            output_cap: prepared.output_cap,
+            metrics: Metrics {
+                input_tokens: prepared.input_tokens,
+                ..Metrics::default()
+            },
+            reasoning_kinds: Vec::new(),
+            provider_usage: None,
+            error,
+            start,
+            end,
+        },
+        observation,
+    }
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct BenchmarkResult {
-    pub ttft: Duration,
+    pub ttft: Option<Duration>,
     pub ttfo: Option<Duration>,
     pub total_latency: Duration,
-    pub throughput: f64,
+    pub throughput: Option<f64>,
     pub input_tokens: u32,
     pub output_tokens: u32,
     pub reasoning_tokens: u32,
-    pub inter_token_latency_s: f64,
-    pub inter_event_latency_s: f64,
+    pub inter_token_latency_s: Option<f64>,
+    pub inter_event_latency_s: Option<f64>,
     pub total_tokens: u32,
     pub provider_usage: Option<ProviderUsage>,
     pub request_start_unix_ns: u64,
@@ -44,6 +365,9 @@ pub struct ProviderUsage {
 #[derive(Debug, Clone)]
 pub struct BenchmarkRequest {
     pub model: String,
+    pub url: String,
+    pub api_key: Option<String>,
+    pub timeout: Duration,
     pub prompt: String,
     pub max_tokens: Option<u32>,
     pub thinking_budget_tokens: Option<u32>,
@@ -51,1001 +375,181 @@ pub struct BenchmarkRequest {
     pub use_server_token_count: bool,
 }
 
-struct TokenCounts {
-    input: u32,
-    output: u32,
-    reasoning: u32,
-    total: u32,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct RequestTiming {
-    start_unix_ns: u64,
-    end_unix_ns: u64,
+impl BenchmarkResult {
+    pub fn from_record(record: &RequestRecord) -> Result<Self> {
+        if record.status != Status::Completed {
+            return Err(anyhow!(
+                "{}",
+                record
+                    .error
+                    .as_ref()
+                    .map(|e| e.message.as_str())
+                    .unwrap_or("request failed")
+            ));
+        }
+        let m = &record.metrics;
+        let provider_usage = record.provider_usage.as_ref().map(|u| {
+            let n = |a: &str, b: &str| {
+                u.pointer(a)
+                    .or_else(|| u.pointer(b))
+                    .and_then(Value::as_u64)
+                    .and_then(|n| u32::try_from(n).ok())
+            };
+            ProviderUsage {
+                input_tokens: n("/input_tokens", "/prompt_tokens"),
+                output_tokens: n("/output_tokens", "/completion_tokens"),
+                total_tokens: n("/total_tokens", "/total_tokens"),
+                reasoning_tokens: n(
+                    "/output_tokens_details/reasoning_tokens",
+                    "/completion_tokens_details/reasoning_tokens",
+                ),
+            }
+        });
+        let output_tokens = u32::try_from(m.content_tokens.unwrap())?;
+        let reasoning_tokens = u32::try_from(m.reasoning_tokens.unwrap())?;
+        let input_tokens = u32::try_from(m.input_tokens)?;
+        Ok(Self {
+            ttft: m.ttft_ms.map(|n| Duration::from_secs_f64(n / 1000.0)),
+            ttfo: m.ttfo_ms.map(|n| Duration::from_secs_f64(n / 1000.0)),
+            total_latency: record.end.duration_since(record.start),
+            throughput: m.generation_tokens_per_second,
+            input_tokens,
+            output_tokens,
+            reasoning_tokens,
+            inter_token_latency_s: m.mean_inter_token_latency_ms.map(|n| n / 1000.0),
+            inter_event_latency_s: m.mean_inter_event_latency_ms.map(|n| n / 1000.0),
+            total_tokens: input_tokens
+                .checked_add(output_tokens)
+                .and_then(|n| n.checked_add(reasoning_tokens))
+                .ok_or_else(|| anyhow!("token total overflow"))?,
+            provider_usage,
+            request_start_unix_ns: record.start_time_unix_ns,
+            request_end_unix_ns: record.end_time_unix_ns,
+        })
+    }
 }
 
 pub async fn run_benchmark(
-    client: &ApiClient,
+    client: &Client,
     api: ApiType,
     request: BenchmarkRequest,
 ) -> Result<BenchmarkResult> {
-    match api {
-        ApiType::Chat => {
-            let client = client
-                .openai()
-                .ok_or_else(|| anyhow!("OpenAI client unavailable"))?;
-            run_chat_benchmark(client, &request).await
-        }
-        ApiType::Responses => {
-            let client = client
-                .openai()
-                .ok_or_else(|| anyhow!("OpenAI client unavailable"))?;
-            run_responses_benchmark(client, &request).await
-        }
-        ApiType::Messages => {
-            let client = client
-                .anthropic_messages()
-                .ok_or_else(|| anyhow!("Anthropic Messages client unavailable"))?;
-            run_messages_benchmark(client, &request).await
-        }
-    }
-}
-
-async fn run_chat_benchmark(
-    client: &Client<OpenAIConfig>,
-    request: &BenchmarkRequest,
-) -> Result<BenchmarkResult> {
-    let request_start_unix_ns = unix_time_now_ns();
-    let start_time = Instant::now();
-    let mut content_arrivals: Vec<(Instant, String)> = Vec::new();
-    let mut reasoning_arrivals: Vec<(Instant, String)> = Vec::new();
-    let mut generated_text = String::new();
-    let mut reasoning_text = String::new();
-    let mut usage: Option<CompletionUsage> = None;
-
-    let mut stream = create_chat_completion_stream(
-        client,
+    let body = client::request_body(
+        api,
         &request.model,
         &request.prompt,
         request.max_tokens,
-        request.use_server_token_count,
-    )
-    .await?;
-    while let Some(response_result) = stream.next().await {
-        let response = response_result?;
-        if let Some(chunk_usage) = response.usage {
-            usage = Some(chunk_usage);
-        }
-        for choice in response.choices {
-            let now = Instant::now();
-
-            let reasoning = choice
-                .delta
-                .reasoning_content
-                .as_deref()
-                .or(choice.delta.reasoning.as_deref())
-                .unwrap_or("");
-
-            if !reasoning.is_empty() {
-                reasoning_arrivals.push((now, reasoning.to_string()));
-                reasoning_text.push_str(reasoning);
-            }
-
-            let content = choice.delta.content.as_deref().unwrap_or("");
-            if !content.is_empty() {
-                content_arrivals.push((now, content.to_string()));
-                generated_text.push_str(content);
-            }
-        }
-    }
-
-    let end_time = Instant::now();
-    let request_end_unix_ns = unix_time_now_ns();
-
-    let provider_usage = usage.as_ref().map(provider_usage_from_chat_usage);
-    let token_counts = compute_token_counts(
-        &request.prompt,
-        &generated_text,
-        &reasoning_text,
-        &request.tokenizer,
-    )?;
-
-    Ok(process_benchmark_data_with_timestamps(
-        start_time,
-        end_time,
-        &content_arrivals,
-        &reasoning_arrivals,
-        &token_counts,
-        provider_usage,
-        RequestTiming {
-            start_unix_ns: request_start_unix_ns,
-            end_unix_ns: request_end_unix_ns,
-        },
-    ))
-}
-
-async fn run_responses_benchmark(
-    client: &Client<OpenAIConfig>,
-    request: &BenchmarkRequest,
-) -> Result<BenchmarkResult> {
-    let request_start_unix_ns = unix_time_now_ns();
-    let start_time = Instant::now();
-    let mut content_arrivals: Vec<(Instant, String)> = Vec::new();
-    let mut reasoning_arrivals: Vec<(Instant, String)> = Vec::new();
-    let mut generated_text = String::new();
-    let mut reasoning_text = String::new();
-    let mut usage: Option<ResponsesUsage> = None;
-
-    let mut stream =
-        create_responses_stream(client, &request.model, &request.prompt, request.max_tokens)
-            .await?;
-    while let Some(event_result) = stream.next().await {
-        let event = event_result?;
-        let now = Instant::now();
-
-        match event {
-            ResponsesStreamEvent::OutputTextDelta { delta: Some(text) } if !text.is_empty() => {
-                content_arrivals.push((now, text.clone()));
-                generated_text.push_str(&text);
-            }
-            ResponsesStreamEvent::ReasoningTextDelta { delta: Some(text) }
-            | ResponsesStreamEvent::ReasoningSummaryTextDelta { delta: Some(text) }
-            | ResponsesStreamEvent::ReasoningDelta { delta: Some(text) }
-                if !text.is_empty() =>
-            {
-                reasoning_arrivals.push((now, text.clone()));
-                reasoning_text.push_str(&text);
-            }
-            ResponsesStreamEvent::ResponseCompleted { response } => {
-                usage = response.and_then(|response| response.usage);
-            }
-            ResponsesStreamEvent::Error { error } => {
-                let message = error
-                    .get("message")
-                    .and_then(|value| value.as_str())
-                    .unwrap_or("unknown Responses API error");
-                return Err(anyhow::anyhow!("Responses API error: {}", message));
-            }
-            _ => {}
-        }
-    }
-
-    let end_time = Instant::now();
-    let request_end_unix_ns = unix_time_now_ns();
-
-    let provider_usage = usage.as_ref().map(provider_usage_from_responses_usage);
-    let token_counts = compute_token_counts(
-        &request.prompt,
-        &generated_text,
-        &reasoning_text,
-        &request.tokenizer,
-    )?;
-
-    Ok(process_benchmark_data_with_timestamps(
-        start_time,
-        end_time,
-        &content_arrivals,
-        &reasoning_arrivals,
-        &token_counts,
-        provider_usage,
-        RequestTiming {
-            start_unix_ns: request_start_unix_ns,
-            end_unix_ns: request_end_unix_ns,
-        },
-    ))
-}
-
-async fn run_messages_benchmark(
-    client: &MessagesClient,
-    request: &BenchmarkRequest,
-) -> Result<BenchmarkResult> {
-    let max_tokens = request
-        .max_tokens
-        .ok_or_else(|| anyhow!("Messages API requires --mean-output-tokens (max_tokens)"))?;
-    let request_start_unix_ns = unix_time_now_ns();
-    let start_time = Instant::now();
-    let mut content_arrivals: Vec<(Instant, String)> = Vec::new();
-    let mut reasoning_arrivals: Vec<(Instant, String)> = Vec::new();
-    let mut generated_text = String::new();
-    let mut reasoning_text = String::new();
-    let mut usage: Option<MessagesUsage> = None;
-
-    let mut stream = create_messages_stream(
-        client,
-        &request.model,
-        &request.prompt,
-        max_tokens,
         request.thinking_budget_tokens,
-    )
-    .await?;
-    while let Some(event_result) = stream.next().await {
-        let event = event_result?;
-        let now = Instant::now();
-
-        match event {
-            MessagesStreamEvent::ContentBlockDelta {
-                delta: MessagesContentDelta::TextDelta { text: Some(text) },
-            } if !text.is_empty() => {
-                content_arrivals.push((now, text.clone()));
-                generated_text.push_str(&text);
-            }
-            MessagesStreamEvent::ContentBlockDelta {
-                delta:
-                    MessagesContentDelta::ThinkingDelta {
-                        thinking: Some(text),
-                    },
-            } if !text.is_empty() => {
-                reasoning_arrivals.push((now, text.clone()));
-                reasoning_text.push_str(&text);
-            }
-            MessagesStreamEvent::MessageStart { message } => {
-                usage = merge_messages_usage(usage, message.usage);
-            }
-            MessagesStreamEvent::MessageDelta {
-                usage: delta_usage, ..
-            } => {
-                usage = merge_messages_usage(usage, delta_usage);
-            }
-            MessagesStreamEvent::Error { error } => {
-                let message = error
-                    .message
-                    .as_deref()
-                    .unwrap_or("unknown Anthropic Messages API error");
-                return Err(anyhow!("Anthropic Messages API error: {}", message));
-            }
-            _ => {}
-        }
-    }
-
-    let end_time = Instant::now();
-    let request_end_unix_ns = unix_time_now_ns();
-
-    if generated_text.is_empty()
-        && reasoning_text.is_empty()
-        && usage
-            .as_ref()
-            .and_then(|usage| usage.output_tokens)
-            .is_some_and(|output_tokens| output_tokens > 0)
-    {
-        let output_tokens = usage.and_then(|usage| usage.output_tokens).unwrap_or(0);
-        return Err(anyhow!(
-            "Messages API reported {output_tokens} output tokens but streamed no text or thinking deltas"
-        ));
-    }
-
-    let provider_usage = usage.as_ref().map(provider_usage_from_messages_usage);
-    let token_counts = compute_token_counts(
-        &request.prompt,
-        &generated_text,
-        &reasoning_text,
-        &request.tokenizer,
-    )?;
-
-    Ok(process_benchmark_data_with_timestamps(
-        start_time,
-        end_time,
-        &content_arrivals,
-        &reasoning_arrivals,
-        &token_counts,
-        provider_usage,
-        RequestTiming {
-            start_unix_ns: request_start_unix_ns,
-            end_unix_ns: request_end_unix_ns,
-        },
-    ))
-}
-
-fn provider_usage_from_chat_usage(usage: &CompletionUsage) -> ProviderUsage {
-    let reasoning_tokens = usage
-        .completion_tokens_details
-        .as_ref()
-        .and_then(|details| details.reasoning_tokens);
-
-    ProviderUsage {
-        input_tokens: Some(usage.prompt_tokens),
-        output_tokens: Some(usage.completion_tokens),
-        total_tokens: Some(usage.total_tokens),
-        reasoning_tokens,
-    }
-}
-
-fn provider_usage_from_responses_usage(usage: &ResponsesUsage) -> ProviderUsage {
-    let reasoning_tokens = usage
-        .output_tokens_details
-        .as_ref()
-        .and_then(|details| details.reasoning_tokens);
-
-    ProviderUsage {
-        input_tokens: usage.input_tokens,
-        output_tokens: usage.output_tokens,
-        total_tokens: usage.total_tokens,
-        reasoning_tokens,
-    }
-}
-
-fn provider_usage_from_messages_usage(usage: &MessagesUsage) -> ProviderUsage {
-    ProviderUsage {
-        input_tokens: usage.input_tokens,
-        output_tokens: usage.output_tokens,
-        total_tokens: None,
-        reasoning_tokens: messages_usage_reasoning_tokens(usage),
-    }
-}
-
-fn messages_usage_reasoning_tokens(usage: &MessagesUsage) -> Option<u32> {
-    usage
-        .output_tokens_details
-        .as_ref()
-        .and_then(|details| details.reasoning_tokens)
-        .or_else(|| {
-            usage
-                .completion_tokens_details
-                .as_ref()
-                .and_then(|details| details.reasoning_tokens)
-        })
-}
-
-fn merge_messages_usage(
-    current: Option<MessagesUsage>,
-    update: Option<MessagesUsage>,
-) -> Option<MessagesUsage> {
-    match (current, update) {
-        (None, None) => None,
-        (Some(existing), None) => Some(existing),
-        (None, Some(new_usage)) => Some(new_usage),
-        (Some(mut existing), Some(new_usage)) => {
-            if new_usage.input_tokens.is_some() {
-                existing.input_tokens = new_usage.input_tokens;
-            }
-            if new_usage.output_tokens.is_some() {
-                existing.output_tokens = new_usage.output_tokens;
-            }
-            if new_usage.output_tokens_details.is_some() {
-                existing.output_tokens_details = new_usage.output_tokens_details;
-            }
-            if new_usage.completion_tokens_details.is_some() {
-                existing.completion_tokens_details = new_usage.completion_tokens_details;
-            }
-            Some(existing)
-        }
-    }
-}
-
-fn compute_token_counts(
-    prompt: &str,
-    generated_text: &str,
-    reasoning_text: &str,
-    tokenizer: &tokenizers::Tokenizer,
-) -> Result<TokenCounts> {
-    let input_tokens = u32::try_from(tokens::count(tokenizer, prompt)?)?;
-    let output_tokens = u32::try_from(tokens::count(tokenizer, generated_text)?)?;
-    let reasoning_tokens = if reasoning_text.is_empty() {
-        0
-    } else {
-        u32::try_from(tokens::count(tokenizer, reasoning_text)?)?
+        request.use_server_token_count,
+    );
+    let input_tokens = tokens::count(&request.tokenizer, &request.prompt)?;
+    let prepared = PreparedRequest {
+        id: 0,
+        phase: Phase::Measurement,
+        input_target: input_tokens.try_into()?,
+        input_tokens,
+        output_cap: request.max_tokens,
+        request: client::build_request(
+            client,
+            api,
+            &request.url,
+            request.api_key.as_deref(),
+            &body,
+        )?,
     };
-
-    Ok(TokenCounts {
-        input: input_tokens,
-        output: output_tokens,
-        reasoning: reasoning_tokens,
-        total: input_tokens + output_tokens + reasoning_tokens,
-    })
-}
-
-#[cfg(test)]
-fn process_benchmark_data(
-    start_time: Instant,
-    end_time: Instant,
-    content_arrivals: &[(Instant, String)],
-    reasoning_arrivals: &[(Instant, String)],
-    tokens: &TokenCounts,
-) -> BenchmarkResult {
-    process_benchmark_data_with_timestamps(
-        start_time,
-        end_time,
-        content_arrivals,
-        reasoning_arrivals,
-        tokens,
-        None,
-        RequestTiming {
-            start_unix_ns: 0,
-            end_unix_ns: 0,
-        },
-    )
-}
-
-fn process_benchmark_data_with_timestamps(
-    start_time: Instant,
-    end_time: Instant,
-    content_arrivals: &[(Instant, String)],
-    reasoning_arrivals: &[(Instant, String)],
-    tokens: &TokenCounts,
-    provider_usage: Option<ProviderUsage>,
-    timing: RequestTiming,
-) -> BenchmarkResult {
-    let first_content_time = content_arrivals.first().map(|(t, _)| *t);
-    let first_reasoning_time = reasoning_arrivals.first().map(|(t, _)| *t);
-
-    let ttft = match (first_content_time, first_reasoning_time) {
-        (Some(c), Some(r)) => std::cmp::min(c, r).duration_since(start_time),
-        (Some(c), None) => c.duration_since(start_time),
-        (None, Some(r)) => r.duration_since(start_time),
-        (None, None) => Duration::ZERO,
-    };
-
-    let ttfo = first_content_time.map(|t| t.duration_since(start_time));
-
-    let mut all_arrivals: Vec<Instant> = content_arrivals
-        .iter()
-        .map(|(t, _)| *t)
-        .chain(reasoning_arrivals.iter().map(|(t, _)| *t))
-        .collect();
-    all_arrivals.sort();
-
-    let mut time_to_next_event = Vec::new();
-    let mut last_time: Option<Instant> = None;
-
-    for arrive_time in all_arrivals.iter() {
-        if let Some(lt) = last_time {
-            let gap = arrive_time.duration_since(lt);
-            time_to_next_event.push(gap);
-        }
-        last_time = Some(*arrive_time);
-    }
-
-    let total_latency = end_time.duration_since(start_time);
-    let sum_time_to_next_event: Duration = time_to_next_event.iter().sum();
-    let inter_event_latency_s = if !time_to_next_event.is_empty() {
-        sum_time_to_next_event.as_secs_f64() / time_to_next_event.len() as f64
-    } else {
-        0.0
-    };
-
-    let generation_window = if all_arrivals.len() >= 2 {
-        let first = all_arrivals.first().unwrap();
-        let last = all_arrivals.last().unwrap();
-        last.saturating_duration_since(*first)
-    } else {
-        Duration::ZERO
-    };
-
-    let usage_only_reasoning = tokens.reasoning > 0 && reasoning_arrivals.is_empty();
-    let total_generated_tokens = if usage_only_reasoning {
-        tokens.output
-    } else {
-        tokens.output + tokens.reasoning
-    };
-    let inter_token_latency_s =
-        if generation_window.as_secs_f64() > 0.0 && total_generated_tokens >= 2 {
-            generation_window.as_secs_f64() / (total_generated_tokens as f64 - 1.0)
-        } else {
-            0.0
-        };
-    let throughput = if generation_window.as_secs_f64() > 0.0 {
-        total_generated_tokens as f64 / generation_window.as_secs_f64()
-    } else {
-        0.0
-    };
-
-    BenchmarkResult {
-        ttft,
-        ttfo,
-        total_latency,
-        throughput,
-        input_tokens: tokens.input,
-        output_tokens: tokens.output,
-        reasoning_tokens: tokens.reasoning,
-        inter_token_latency_s,
-        inter_event_latency_s,
-        total_tokens: tokens.total,
-        provider_usage,
-        request_start_unix_ns: timing.start_unix_ns,
-        request_end_unix_ns: timing.end_unix_ns,
-    }
-}
-
-fn unix_time_now_ns() -> u64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .ok()
-        .and_then(|d| u64::try_from(d.as_nanos()).ok())
-        .unwrap_or_default()
+    let (_cancel_tx, cancel) = watch::channel(false);
+    let record = capture(client.clone(), api, prepared, request.timeout, cancel)
+        .await
+        .finish(&request.tokenizer);
+    BenchmarkResult::from_record(&record)
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::client::anthropic::messages::MessagesOutputTokensDetails;
-
     use super::*;
-    use crate::client::openai::responses::ResponsesOutputTokensDetails;
-    use async_openai::types::chat::CompletionTokensDetails;
-    use std::time::{Duration, Instant};
 
     #[test]
-    fn test_process_benchmark_data_multiple_arrivals() {
-        let now = Instant::now();
-        let start_time = now;
-        let arr1 = now + Duration::from_millis(64);
-        let arr2 = now + Duration::from_millis(128);
-        let arr3 = now + Duration::from_millis(192);
-        let end_time = arr3;
-
-        let content_arrivals = vec![
-            (arr1, "hello".to_string()),
-            (arr2, " world".to_string()),
-            (arr3, "!".to_string()),
-        ];
-
-        let tokens = TokenCounts {
-            input: 10,
-            output: 3,
-            reasoning: 0,
-            total: 13,
-        };
-
-        let result = process_benchmark_data(start_time, end_time, &content_arrivals, &[], &tokens);
-
-        assert_eq!(result.ttft, Duration::from_millis(64));
-        assert_eq!(result.ttfo, Some(Duration::from_millis(64)));
-        assert_eq!(result.total_latency, Duration::from_millis(192));
-        // 192ms - 64ms = 128ms => 3 / 0.128 = 23.4375 tok/s
-        assert_eq!(result.throughput, 23.4375);
-        assert_eq!(result.input_tokens, 10);
-        assert_eq!(result.output_tokens, 3);
-        assert_eq!(result.reasoning_tokens, 0);
-        assert_eq!(result.total_tokens, 13);
-        // Gap 1: 128-64 = 64ms, Gap 2: 192-128 = 64ms -> Average: 64ms = 0.064s
-        assert_eq!(result.inter_token_latency_s, 0.064);
-        assert_eq!(result.inter_event_latency_s, 0.064);
-    }
-
-    #[test]
-    fn test_throughput_generation_window_example() {
-        // chunks arrive at T=[1.0s, 1.2s, 1.5s], output_tokens=30
-        // throughput = 30 / (1.5 - 1.0) = 60 tok/s
+    fn timing_excludes_prefill_and_completion_tail_from_generation() {
         let start = Instant::now();
-        let content_arrivals = vec![
-            (start + Duration::from_millis(1000), "a".to_string()),
-            (start + Duration::from_millis(1200), "b".to_string()),
-            (start + Duration::from_millis(1500), "c".to_string()),
-        ];
-
-        let tokens = TokenCounts {
-            input: 10,
-            output: 30,
-            reasoning: 0,
-            total: 40,
-        };
-
-        let end_time = start + Duration::from_millis(1500);
-
-        let result = process_benchmark_data(start, end_time, &content_arrivals, &[], &tokens);
-
-        assert_eq!(result.throughput, 60.0);
+        let mut obs = Observation::default();
+        obs.accept(
+            &Event {
+                reasoning: "a b",
+                reasoning_kind: Some("text"),
+                ..Event::default()
+            },
+            start + Duration::from_millis(100),
+        );
+        obs.accept(
+            &Event {
+                content: "c d",
+                ..Event::default()
+            },
+            start + Duration::from_millis(300),
+        );
+        let m = obs.metrics(
+            start,
+            start + Duration::from_millis(500),
+            true,
+            8,
+            Some(2),
+            Some(2),
+        );
+        assert_eq!(m.ttft_ms, Some(100.0));
+        assert_eq!(m.ttfo_ms, Some(300.0));
+        assert_eq!(m.request_latency_ms, Some(500.0));
+        assert_eq!(m.generation_window_ms, Some(200.0));
+        assert_eq!(m.generation_tokens_per_second, Some(15.0));
+        assert_eq!(m.mean_inter_event_latency_ms, Some(200.0));
+        assert_eq!(m.max_inter_event_latency_ms, Some(200.0));
+        assert_eq!(m.generated_tokens, Some(4));
     }
 
     #[test]
-    fn test_ttft_not_included_in_inter_token_latency() {
-        let start_time = Instant::now();
-        let ttft_delay = Duration::from_millis(1000);
-        let inter_token_gap = Duration::from_millis(100);
-
-        // Mock chunk arrivals: first token after 1s, then 2 more tokens with 100ms gaps
-        let content_arrivals = vec![
-            (start_time + ttft_delay, "Hello".to_string()),
-            (
-                start_time + ttft_delay + inter_token_gap,
-                " world".to_string(),
-            ),
-            (
-                start_time + ttft_delay + inter_token_gap * 2,
-                "!".to_string(),
-            ),
-        ];
-
-        let end_time = start_time + ttft_delay + inter_token_gap * 2;
-
-        let tokens = TokenCounts {
-            input: 10,
-            output: 3,
-            reasoning: 0,
-            total: 13,
-        };
-
-        let result = process_benchmark_data(start_time, end_time, &content_arrivals, &[], &tokens);
-
-        assert_eq!(result.ttft, Duration::from_millis(1000));
-        assert_eq!(result.ttfo, Some(Duration::from_millis(1000)));
-
-        // Inter-token latency should only include the 2 gaps between tokens (100ms each)
-        // Gap 1: 100ms, Gap 2: 100ms -> Average: 100ms = 0.1s
-        assert_eq!(result.inter_token_latency_s, 0.1);
-        assert_eq!(result.inter_event_latency_s, 0.1);
-    }
-
-    #[test]
-    fn test_single_token_response() {
-        let start_time = Instant::now();
-        let ttft_delay = Duration::from_millis(1000);
-
-        let content_arrivals = vec![(start_time + ttft_delay, "Hello".to_string())];
-
-        let end_time = start_time + ttft_delay;
-
-        let tokens = TokenCounts {
-            input: 5,
-            output: 1,
-            reasoning: 0,
-            total: 6,
-        };
-
-        let result = process_benchmark_data(start_time, end_time, &content_arrivals, &[], &tokens);
-
-        assert_eq!(result.ttft, Duration::from_millis(1000));
-        assert_eq!(result.ttfo, Some(Duration::from_millis(1000)));
-
-        // No inter-token latency since there's only one token
-        assert_eq!(result.inter_token_latency_s, 0.0);
-        assert_eq!(result.inter_event_latency_s, 0.0);
-
-        // Single chunk => generation window duration = 0 => throughput reported as 0.0
-        assert_eq!(result.throughput, 0.0);
-    }
-
-    #[test]
-    fn test_throughput_independent_of_post_generation_tail() {
+    fn missing_and_single_event_timings_are_not_fabricated() {
         let start = Instant::now();
-        let content_arrivals = vec![
-            (start + Duration::from_millis(1000), "a".to_string()),
-            (start + Duration::from_millis(1500), "b".to_string()),
-        ];
-
-        let tokens = TokenCounts {
-            input: 10,
-            output: 30,
-            reasoning: 0,
-            total: 40,
-        };
-
-        // Simulate a long tail after last token before the stream finishes
-        let end_time = start + Duration::from_millis(10_000);
-
-        let result = process_benchmark_data(start, end_time, &content_arrivals, &[], &tokens);
-
-        // Generation window: 1.5s - 1.0s = 0.5s => 30 / 0.5 = 60 tok/s
-        assert_eq!(result.throughput, 60.0);
-        // But total latency should still include the tail.
-        assert_eq!(result.total_latency, Duration::from_millis(10_000));
-    }
-
-    #[test]
-    fn test_empty_response() {
-        let start_time = Instant::now();
-        let end_time = start_time + Duration::from_millis(100);
-
-        let tokens = TokenCounts {
-            input: 5,
-            output: 0,
-            reasoning: 0,
-            total: 5,
-        };
-
-        let result = process_benchmark_data(start_time, end_time, &[], &[], &tokens);
-
-        assert_eq!(result.ttft, Duration::ZERO);
-        assert_eq!(result.ttfo, None);
-
-        assert_eq!(result.inter_token_latency_s, 0.0);
-        assert_eq!(result.inter_event_latency_s, 0.0);
-        assert_eq!(result.throughput, 0.0);
-    }
-
-    #[test]
-    fn test_process_benchmark_data_zero_duration() {
-        let now = Instant::now();
-        let start_time = now;
-        let end_time = now;
-
-        let tokens = TokenCounts {
-            input: 10,
-            output: 0,
-            reasoning: 0,
-            total: 10,
-        };
-
-        let result = process_benchmark_data(start_time, end_time, &[], &[], &tokens);
-
-        assert_eq!(result.ttft, Duration::ZERO);
-        assert_eq!(result.ttfo, None);
-        assert_eq!(result.total_latency, Duration::ZERO);
-        assert_eq!(result.throughput, 0.0);
-        assert_eq!(result.input_tokens, 10);
-        assert_eq!(result.output_tokens, 0);
-        assert_eq!(result.reasoning_tokens, 0);
-        assert_eq!(result.total_tokens, 10);
-        assert_eq!(result.inter_token_latency_s, 0.0);
-        assert_eq!(result.inter_event_latency_s, 0.0);
-    }
-
-    #[test]
-    fn test_inter_token_latency_uses_token_count_not_event_count() {
-        let start_time = Instant::now();
-        let content_arrivals = vec![
-            (
-                start_time + Duration::from_millis(100),
-                "hello ".to_string(),
-            ),
-            (start_time + Duration::from_millis(200), "world".to_string()),
-        ];
-        let end_time = start_time + Duration::from_millis(200);
-
-        // Simulate batched streaming where 5 output tokens arrive across 2 stream events.
-        let tokens = TokenCounts {
-            input: 8,
-            output: 5,
-            reasoning: 0,
-            total: 13,
-        };
-
-        let result = process_benchmark_data(start_time, end_time, &content_arrivals, &[], &tokens);
-
-        // Inter-event latency is based on stream event gaps.
-        assert_eq!(result.inter_event_latency_s, 0.1);
-        // Inter-token latency is based on generation window and token count.
-        // Generation window: 200ms - 100ms = 100ms. Tokens: 5 => 4 intervals.
-        assert_eq!(result.inter_token_latency_s, 0.025);
-    }
-
-    #[test]
-    fn test_reasoning_tokens_with_content() {
-        let start_time = Instant::now();
-        let reasoning_start = Duration::from_millis(100);
-        let content_start = Duration::from_millis(500);
-
-        // Reasoning tokens arrive first
-        let reasoning_arrivals = vec![
-            (start_time + reasoning_start, "Let me think...".to_string()),
-            (
-                start_time + Duration::from_millis(200),
-                "Step 1".to_string(),
-            ),
-            (
-                start_time + Duration::from_millis(300),
-                "Step 2".to_string(),
-            ),
-        ];
-
-        // Content tokens arrive after reasoning
-        let content_arrivals = vec![
-            (start_time + content_start, "The answer is".to_string()),
-            (start_time + Duration::from_millis(600), " 42".to_string()),
-        ];
-
-        let end_time = start_time + Duration::from_millis(600);
-
-        let tokens = TokenCounts {
-            input: 10,
-            output: 5,
-            reasoning: 10,
-            total: 25,
-        };
-
-        let result = process_benchmark_data(
-            start_time,
-            end_time,
-            &content_arrivals,
-            &reasoning_arrivals,
-            &tokens,
+        let mut obs = Observation::default();
+        let m = obs.metrics(start, start, true, 1, Some(0), Some(0));
+        assert_eq!(m.ttft_ms, None);
+        assert_eq!(m.ttfo_ms, None);
+        obs.accept(
+            &Event {
+                content: "a b",
+                reasoning: "c d",
+                ..Event::default()
+            },
+            start,
         );
-
-        // TTFT should be time to first reasoning token (100ms)
-        assert_eq!(result.ttft, Duration::from_millis(100));
-        // TTFO should be time to first content token (500ms)
-        assert_eq!(result.ttfo, Some(Duration::from_millis(500)));
-        assert_eq!(result.output_tokens, 5);
-        assert_eq!(result.reasoning_tokens, 10);
-        assert_eq!(result.total_tokens, 25);
+        let m = obs.metrics(start, start, true, 1, Some(2), Some(2));
+        assert_eq!(m.delivery_events, 1);
+        assert_eq!(m.generation_window_ms, Some(0.0));
+        assert_eq!(m.generation_tokens_per_second, None);
+        assert_eq!(m.mean_inter_event_latency_ms, None);
     }
 
     #[test]
-    fn test_reasoning_only_no_content() {
-        let start_time = Instant::now();
-        let reasoning_start = Duration::from_millis(100);
-
-        // Only reasoning tokens, no content
-        let reasoning_arrivals = vec![
-            (start_time + reasoning_start, "Thinking...".to_string()),
-            (start_time + Duration::from_millis(200), "Done".to_string()),
-        ];
-
-        let end_time = start_time + Duration::from_millis(200);
-
-        let tokens = TokenCounts {
-            input: 10,
-            output: 0,
-            reasoning: 5,
-            total: 15,
-        };
-
-        let result =
-            process_benchmark_data(start_time, end_time, &[], &reasoning_arrivals, &tokens);
-
-        // TTFT should be time to first reasoning token
-        assert_eq!(result.ttft, Duration::from_millis(100));
-        // TTFO should be None (no content tokens)
-        assert_eq!(result.ttfo, None);
-        assert_eq!(result.output_tokens, 0);
-        assert_eq!(result.reasoning_tokens, 5);
-        // Throughput should be based on reasoning tokens
-        // Generation window: 200ms - 100ms = 100ms => 5 / 0.1 = 50 tok/s
-        assert_eq!(result.throughput, 50.0);
-    }
-
-    #[test]
-    fn test_usage_only_reasoning_excluded_from_throughput() {
-        let start_time = Instant::now();
-
-        let content_arrivals = vec![
-            (start_time + Duration::from_millis(100), "Hello".to_string()),
-            (
-                start_time + Duration::from_millis(200),
-                " world".to_string(),
-            ),
-        ];
-
-        let end_time = start_time + Duration::from_millis(200);
-
-        let tokens = TokenCounts {
-            input: 10,
-            output: 4,
-            reasoning: 20,
-            total: 34,
-        };
-
-        let result = process_benchmark_data(start_time, end_time, &content_arrivals, &[], &tokens);
-
-        assert_eq!(result.ttft, Duration::from_millis(100));
-        assert_eq!(result.ttfo, Some(Duration::from_millis(100)));
-        assert_eq!(result.output_tokens, 4);
-        assert_eq!(result.reasoning_tokens, 20);
-        assert!((result.throughput - 40.0).abs() < 1e-9);
-    }
-
-    #[test]
-    fn test_content_arrives_before_reasoning() {
-        // Edge case: content arrives before reasoning (unusual but possible)
-        let start_time = Instant::now();
-
-        let content_arrivals = vec![(start_time + Duration::from_millis(100), "Quick".to_string())];
-
-        let reasoning_arrivals = vec![(
-            start_time + Duration::from_millis(200),
-            "Wait...".to_string(),
-        )];
-
-        let end_time = start_time + Duration::from_millis(200);
-
-        let tokens = TokenCounts {
-            input: 10,
-            output: 2,
-            reasoning: 3,
-            total: 15,
-        };
-
-        let result = process_benchmark_data(
-            start_time,
-            end_time,
-            &content_arrivals,
-            &reasoning_arrivals,
-            &tokens,
+    fn usage_updates_preserve_input_counts_and_never_enter_local_counts() {
+        let start = Instant::now();
+        let mut obs = Observation::default();
+        let first = serde_json::json!({"input_tokens":12,"output_tokens":0});
+        let last = serde_json::json!({"output_tokens":100,"output_tokens_details":{"reasoning_tokens":90}});
+        obs.accept(
+            &Event {
+                usage: Some(&first),
+                ..Event::default()
+            },
+            start,
         );
-
-        // TTFT should be min of both (100ms - content arrived first)
-        assert_eq!(result.ttft, Duration::from_millis(100));
-        // TTFO should also be 100ms
-        assert_eq!(result.ttfo, Some(Duration::from_millis(100)));
-    }
-
-    #[test]
-    fn test_token_counts_from_chat_usage_with_reasoning() {
-        let usage = CompletionUsage {
-            prompt_tokens: 12,
-            completion_tokens: 8,
-            total_tokens: 20,
-            prompt_tokens_details: None,
-            completion_tokens_details: Some(CompletionTokensDetails {
-                reasoning_tokens: Some(3),
-                ..Default::default()
-            }),
-        };
-
-        let provider_usage = provider_usage_from_chat_usage(&usage);
-        assert_eq!(provider_usage.input_tokens, Some(12));
-        assert_eq!(provider_usage.output_tokens, Some(8));
-        assert_eq!(provider_usage.reasoning_tokens, Some(3));
-        assert_eq!(provider_usage.total_tokens, Some(20));
-    }
-
-    #[test]
-    fn test_provider_usage_from_responses_usage_with_reasoning() {
-        let usage = ResponsesUsage {
-            input_tokens: Some(9),
-            output_tokens: Some(4),
-            total_tokens: None,
-            output_tokens_details: Some(ResponsesOutputTokensDetails {
-                reasoning_tokens: Some(1),
-            }),
-        };
-
-        let provider_usage = provider_usage_from_responses_usage(&usage);
-        assert_eq!(provider_usage.input_tokens, Some(9));
-        assert_eq!(provider_usage.output_tokens, Some(4));
-        assert_eq!(provider_usage.reasoning_tokens, Some(1));
-        assert_eq!(provider_usage.total_tokens, None);
-    }
-
-    #[test]
-    fn test_provider_usage_from_messages_usage() {
-        let usage = MessagesUsage {
-            input_tokens: Some(12),
-            output_tokens: Some(8),
-            output_tokens_details: None,
-            completion_tokens_details: None,
-        };
-
-        let provider_usage = provider_usage_from_messages_usage(&usage);
-        assert_eq!(provider_usage.input_tokens, Some(12));
-        assert_eq!(provider_usage.output_tokens, Some(8));
-        assert_eq!(provider_usage.reasoning_tokens, None);
-        assert_eq!(provider_usage.total_tokens, None);
-    }
-
-    #[test]
-    fn test_provider_usage_from_messages_usage_with_reasoning() {
-        let usage = MessagesUsage {
-            input_tokens: Some(12),
-            output_tokens: Some(8),
-            output_tokens_details: Some(MessagesOutputTokensDetails {
-                reasoning_tokens: Some(3),
-            }),
-            completion_tokens_details: None,
-        };
-
-        let provider_usage = provider_usage_from_messages_usage(&usage);
-        assert_eq!(provider_usage.input_tokens, Some(12));
-        assert_eq!(provider_usage.output_tokens, Some(8));
-        assert_eq!(provider_usage.reasoning_tokens, Some(3));
-        assert_eq!(provider_usage.total_tokens, None);
-    }
-
-    #[test]
-    fn test_merge_messages_usage_prefers_latest_values() {
-        let current = MessagesUsage {
-            input_tokens: Some(10),
-            output_tokens: Some(1),
-            output_tokens_details: None,
-            completion_tokens_details: None,
-        };
-        let update = MessagesUsage {
-            input_tokens: None,
-            output_tokens: Some(12),
-            output_tokens_details: Some(MessagesOutputTokensDetails {
-                reasoning_tokens: Some(3),
-            }),
-            completion_tokens_details: None,
-        };
-
-        let merged = merge_messages_usage(Some(current), Some(update)).expect("merged");
-        assert_eq!(merged.input_tokens, Some(10));
-        assert_eq!(merged.output_tokens, Some(12));
-        assert_eq!(
-            merged
-                .output_tokens_details
-                .and_then(|details| details.reasoning_tokens),
-            Some(3)
+        obs.accept(
+            &Event {
+                usage: Some(&last),
+                ..Event::default()
+            },
+            start,
         );
+        assert_eq!(obs.usage.as_ref().unwrap()["input_tokens"], 12);
+        let m = obs.metrics(start, start, true, 1, Some(0), Some(0));
+        assert_eq!(m.generated_tokens, Some(0));
+        assert_eq!(m.ttft_ms, None);
     }
 }

@@ -216,3 +216,8 @@ The summary includes statistical breakdowns for latency and token metrics. `indi
 Sonnet prompts use a fresh random window from the tokenized Shakespeare corpus.
 Prompt text must re-tokenize to its sampled target; generation fails if repair cannot achieve that length.
 The tokenizer may be a Hugging Face identifier or a local tokenizer JSON file.
+
+Streaming clients require an explicit completion event; malformed and truncated streams fail.
+TTFT includes exposed reasoning; TTFO requires visible text. Missing timings are absent,
+and generation metrics exclude both the initial wait and completion metadata after the final text event.
+Token counts use assembled text, with provider usage kept separate. HTTP retries and redirects are disabled.

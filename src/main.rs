@@ -5,17 +5,18 @@ mod output;
 mod prompt;
 #[cfg(feature = "self-update")]
 mod self_update;
+#[cfg(test)]
+mod tests;
 mod tokens;
 
 use anyhow::Result;
 #[cfg(feature = "self-update")]
 use args::Command;
 use args::{ApiType, Args, OutputFormat};
-use async_openai::{Client, config::OpenAIConfig};
+
 use benchmark::{BenchmarkRequest, BenchmarkResult, run_benchmark};
 use clap::Parser;
-use client::ApiClient;
-use client::anthropic::messages::MessagesClient;
+
 use futures::{StreamExt, stream::FuturesUnordered};
 use indicatif::{ProgressBar, ProgressStyle};
 use prompt::PromptGenerator;
@@ -37,7 +38,7 @@ fn unix_time_now_ns() -> u64 {
 }
 
 async fn run_benchmark_task(
-    client: Arc<ApiClient>,
+    client: Arc<reqwest::Client>,
     api_type: ApiType,
     request: BenchmarkRequest,
 ) -> Result<BenchmarkResult> {
@@ -61,19 +62,7 @@ async fn main() -> Result<()> {
     args.validate().map_err(|err| anyhow::anyhow!("{err}"))?;
 
     let api = args.api;
-    let api_key = args.api_key.clone().unwrap_or_default();
-    let client = match api {
-        ApiType::Messages => Arc::new(ApiClient::AnthropicMessages(Box::new(MessagesClient::new(
-            url.to_string(),
-            api_key.clone(),
-        )))),
-        ApiType::Chat | ApiType::Responses => {
-            let openai_config = OpenAIConfig::new().with_api_base(url).with_api_key(api_key);
-            Arc::new(ApiClient::OpenAI(Box::new(Client::with_config(
-                openai_config,
-            ))))
-        }
-    };
+    let client = Arc::new(client::http_client()?);
 
     let tokenizer = args.tokenizer.clone().unwrap_or_else(|| model.clone());
     let use_server_token_count = args.use_server_token_count;
@@ -143,6 +132,9 @@ async fn main() -> Result<()> {
 
         let request = BenchmarkRequest {
             model: model_name,
+            url: url.to_owned(),
+            api_key: args.api_key.clone(),
+            timeout: timeout_duration,
             prompt: prompt_clone,
             max_tokens: *max_tokens,
             thinking_budget_tokens: args.thinking_budget,
@@ -191,6 +183,9 @@ async fn main() -> Result<()> {
 
                     let request = BenchmarkRequest {
                         model: model_name,
+            url: url.to_owned(),
+            api_key: args.api_key.clone(),
+            timeout: timeout_duration,
                         prompt: prompt_clone,
                         max_tokens: *max_tokens,
                         thinking_budget_tokens: args.thinking_budget,
