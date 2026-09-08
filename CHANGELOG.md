@@ -9,10 +9,13 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 ### Added
 
 - Support local tokenizer JSON files through `--tokenizer`. ([#69](https://github.com/jpreagan/llmnop/pull/69))
+- Add `--warmup` for requests completed before measurement and excluded from benchmark statistics. ([#71](https://github.com/jpreagan/llmnop/pull/71))
 
 ### Changed
 
 - Rename `--mean-input-tokens` to `--input-tokens`, `--stddev-input-tokens` to `--input-tokens-stddev`, `--mean-output-tokens` to `--output-cap`, `--stddev-output-tokens` to `--output-cap-stddev`, and `--thinking-budget-tokens` to `--thinking-budget`. ([#69](https://github.com/jpreagan/llmnop/pull/69))
+- Replace `--max-num-completed-requests` and `--num-concurrent-requests` with `--requests` and `--concurrency`. Failed attempts count toward the request budget and are not retried. ([#71](https://github.com/jpreagan/llmnop/pull/71))
+- Replace the benchmark-wide `--timeout` with a per-request `--request-timeout`. Save partial results on timeout or interruption. ([#71](https://github.com/jpreagan/llmnop/pull/71))
 
 ### Fixed
 

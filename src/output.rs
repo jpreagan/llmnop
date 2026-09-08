@@ -1,4 +1,6 @@
-use crate::benchmark::BenchmarkResult;
+use crate::args::Args;
+use crate::benchmark::{Phase, RequestRecord, Status, unix_time_ns};
+use anyhow::{Context, Result, anyhow};
 use comfy_table::{
     Attribute, Cell, CellAlignment, Color, ContentArrangement, Table, presets::UTF8_FULL_CONDENSED,
 };
@@ -6,9 +8,9 @@ use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
-use std::fs::{File, create_dir_all};
-use std::io::{Error, ErrorKind, Write};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+use tokio::io::AsyncWriteExt;
 
 pub struct BenchmarkConfig<'a> {
     pub model: &'a str,
@@ -18,10 +20,6 @@ pub struct BenchmarkConfig<'a> {
     pub mean_output_tokens: Option<u32>,
     pub stddev_output_tokens: u32,
     pub num_concurrent_requests: u32,
-}
-
-pub struct WrittenResults {
-    pub summary: BenchmarkSummary,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -77,6 +75,9 @@ pub struct ErrorSummaryEntry {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BenchmarkSummary {
+    pub run_configuration: Option<Value>,
+    pub termination: Option<String>,
+    pub warmup_attempts: Option<usize>,
     pub version: String,
     pub schema_version: String,
     pub llmnop_version: String,
@@ -127,38 +128,6 @@ pub struct BenchmarkSummary {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MetricValue {
-    pub value: Value,
-    pub unit: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RequestError {
-    pub code: i32,
-    #[serde(rename = "type")]
-    pub error_type: String,
-    pub message: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RequestMetadata {
-    pub request_index: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub request_start_ns: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub request_end_ns: Option<u64>,
-    pub benchmark_phase: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RequestRecord {
-    pub metadata: RequestMetadata,
-    pub metrics: BTreeMap<String, MetricValue>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<RequestError>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Quantiles {
     pub p1: f64,
     pub p5: f64,
@@ -169,21 +138,6 @@ pub struct Quantiles {
     pub p90: f64,
     pub p95: f64,
     pub p99: f64,
-}
-
-fn default_results_dir() -> std::io::Result<PathBuf> {
-    let project_dirs = ProjectDirs::from("", "", "llmnop").ok_or_else(|| {
-        Error::new(
-            ErrorKind::NotFound,
-            "could not resolve platform app data directory for llmnop",
-        )
-    })?;
-
-    if let Some(state_dir) = project_dirs.state_dir() {
-        return Ok(state_dir.join("results"));
-    }
-
-    Ok(project_dirs.data_local_dir().join("results"))
 }
 
 fn benchmark_slug(config: &BenchmarkConfig) -> String {
@@ -198,19 +152,6 @@ fn benchmark_slug(config: &BenchmarkConfig) -> String {
         config.mean_input_tokens,
         output_tokens_str
     )
-}
-
-fn generate_run_id() -> std::io::Result<String> {
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|e| Error::other(format!("system clock is before UNIX_EPOCH: {e}")))?;
-    Ok(format!("{}_{:09}", now.as_secs(), now.subsec_nanos()))
-}
-
-fn run_results_dir(base_results_dir: &Path, config: &BenchmarkConfig, run_id: &str) -> PathBuf {
-    base_results_dir.join(benchmark_slug(config)).join(run_id)
 }
 
 pub fn print_summary_to_stdout(
@@ -380,173 +321,6 @@ pub fn print_summary_to_stdout(
     println!("{CYAN}Errors:{RESET} {GREEN}{}{RESET}", num_errors);
 }
 
-pub fn write_results_json(
-    config: &BenchmarkConfig,
-    all_results: &[Result<BenchmarkResult, String>],
-    total_start_time: std::time::Instant,
-    total_end_time: std::time::Instant,
-    start_time_unix_ns: u64,
-    end_time_unix_ns: u64,
-) -> std::io::Result<WrittenResults> {
-    let base_results_dir = default_results_dir()?;
-    let run_id = generate_run_id()?;
-    let run_results_dir = run_results_dir(&base_results_dir, config, &run_id);
-    create_dir_all(&run_results_dir)?;
-
-    let mut total_output_tokens = 0_u64;
-    let mut total_reasoning_tokens = 0_u64;
-    let mut total_input_tokens = 0_u64;
-    let mut successful_results = Vec::new();
-    let mut error_counts_by_message: BTreeMap<String, usize> = BTreeMap::new();
-    let mut per_request_records = Vec::with_capacity(all_results.len());
-
-    for (request_index, result) in all_results.iter().enumerate() {
-        match result {
-            Ok(br) => {
-                total_output_tokens += br.output_tokens as u64;
-                total_reasoning_tokens += br.reasoning_tokens as u64;
-                total_input_tokens += br.input_tokens as u64;
-                successful_results.push(br.clone());
-
-                let mut metrics = BTreeMap::new();
-                metrics.insert(
-                    "time_to_first_token".to_string(),
-                    metric_value_optional_f64(br.ttft.map(|t| t.as_secs_f64() * 1000.0), "ms"),
-                );
-                if let Some(ttfo) = br.ttfo {
-                    metrics.insert(
-                        "time_to_first_output_token".to_string(),
-                        metric_value_f64(ttfo.as_secs_f64() * 1000.0, "ms"),
-                    );
-                }
-                metrics.insert(
-                    "request_latency".to_string(),
-                    metric_value_f64(br.total_latency.as_secs_f64() * 1000.0, "ms"),
-                );
-                metrics.insert(
-                    "inter_token_latency".to_string(),
-                    metric_value_optional_f64(br.inter_token_latency_s.map(|s| s * 1000.0), "ms"),
-                );
-                metrics.insert(
-                    "inter_event_latency".to_string(),
-                    metric_value_optional_f64(br.inter_event_latency_s.map(|s| s * 1000.0), "ms"),
-                );
-                metrics.insert(
-                    "output_token_throughput_per_request".to_string(),
-                    metric_value_optional_f64(br.throughput, "tokens/sec/request"),
-                );
-                metrics.insert(
-                    "input_sequence_length".to_string(),
-                    metric_value_u64(br.input_tokens as u64, "tokens"),
-                );
-                metrics.insert(
-                    "output_token_count".to_string(),
-                    metric_value_u64(br.output_tokens as u64, "tokens"),
-                );
-                metrics.insert(
-                    "reasoning_token_count".to_string(),
-                    metric_value_u64(br.reasoning_tokens as u64, "tokens"),
-                );
-                metrics.insert(
-                    "output_sequence_length".to_string(),
-                    metric_value_u64((br.output_tokens + br.reasoning_tokens) as u64, "tokens"),
-                );
-                if let Some(usage) = &br.provider_usage {
-                    if let Some(tokens) = usage.input_tokens {
-                        metrics.insert(
-                            "usage_input_tokens".to_string(),
-                            metric_value_u64(tokens as u64, "tokens"),
-                        );
-                    }
-                    if let Some(tokens) = usage.output_tokens {
-                        metrics.insert(
-                            "usage_output_tokens".to_string(),
-                            metric_value_u64(tokens as u64, "tokens"),
-                        );
-                    }
-                    if let Some(tokens) = usage.total_tokens {
-                        metrics.insert(
-                            "usage_total_tokens".to_string(),
-                            metric_value_u64(tokens as u64, "tokens"),
-                        );
-                    }
-                    if let Some(tokens) = usage.reasoning_tokens {
-                        metrics.insert(
-                            "usage_reasoning_tokens".to_string(),
-                            metric_value_u64(tokens as u64, "tokens"),
-                        );
-                    }
-                }
-
-                let record = RequestRecord {
-                    metadata: RequestMetadata {
-                        request_index,
-                        request_start_ns: Some(br.request_start_unix_ns),
-                        request_end_ns: Some(br.request_end_unix_ns),
-                        benchmark_phase: "profiling".to_string(),
-                    },
-                    metrics,
-                    error: None,
-                };
-                per_request_records.push(record);
-            }
-            Err(msg) => {
-                *error_counts_by_message.entry(msg.clone()).or_default() += 1;
-
-                let record = RequestRecord {
-                    metadata: RequestMetadata {
-                        request_index,
-                        request_start_ns: None,
-                        request_end_ns: None,
-                        benchmark_phase: "profiling".to_string(),
-                    },
-                    metrics: BTreeMap::new(),
-                    error: Some(RequestError {
-                        code: 1,
-                        error_type: "RequestError".to_string(),
-                        message: msg.clone(),
-                    }),
-                };
-                per_request_records.push(record);
-            }
-        }
-    }
-
-    {
-        let path = run_results_dir.join("individual_responses.jsonl");
-        let mut file = File::create(&path)?;
-        for record in &per_request_records {
-            let line = serde_json::to_string(record)?;
-            file.write_all(line.as_bytes())?;
-            file.write_all(b"\n")?;
-        }
-    }
-
-    let summary = build_summary(
-        &run_id,
-        config,
-        &successful_results,
-        all_results.len(),
-        total_input_tokens,
-        total_output_tokens,
-        total_reasoning_tokens,
-        &error_counts_by_message,
-        total_start_time,
-        total_end_time,
-        start_time_unix_ns,
-        end_time_unix_ns,
-    );
-
-    {
-        let summary_path = run_results_dir.join("summary.json");
-        let mut file = File::create(&summary_path)?;
-        let summary_json = serde_json::to_string_pretty(&summary)?;
-        file.write_all(summary_json.as_bytes())?;
-    }
-
-    Ok(WrittenResults { summary })
-}
-
 #[allow(clippy::too_many_arguments)]
 fn build_summary(
     run_id: &str,
@@ -645,8 +419,11 @@ fn build_summary(
         .collect();
 
     BenchmarkSummary {
-        version: "2026-09-06-streaming.1".to_string(),
-        schema_version: "2.2".to_string(),
+        run_configuration: None,
+        termination: None,
+        warmup_attempts: None,
+        version: "2026-09-06-lifecycle.1".to_string(),
+        schema_version: "2.3".to_string(),
         llmnop_version: env!("CARGO_PKG_VERSION").to_string(),
         benchmark_id: run_id.to_string(),
         benchmark_slug: benchmark_slug(config),
@@ -834,20 +611,6 @@ fn metric_stats_avg_only(unit: &str, avg: f64) -> MetricStats {
     }
 }
 
-fn metric_value_f64(value: f64, unit: &str) -> MetricValue {
-    MetricValue {
-        value: Value::from(value),
-        unit: unit.to_string(),
-    }
-}
-
-fn metric_value_u64(value: u64, unit: &str) -> MetricValue {
-    MetricValue {
-        value: Value::from(value),
-        unit: unit.to_string(),
-    }
-}
-
 fn percentile(sorted_values: &[f64], pct: f64) -> f64 {
     if sorted_values.is_empty() {
         return 0.0;
@@ -856,17 +619,218 @@ fn percentile(sorted_values: &[f64], pct: f64) -> f64 {
     sorted_values[idx]
 }
 
-fn metric_value_optional_f64(value: Option<f64>, unit: &str) -> MetricValue {
-    MetricValue {
-        value: serde_json::json!(value),
-        unit: unit.into(),
+#[derive(Debug, Clone, Serialize)]
+pub struct BenchmarkResult {
+    pub ttft: Option<Duration>,
+    pub ttfo: Option<Duration>,
+    pub total_latency: Duration,
+    pub throughput: Option<f64>,
+    pub input_tokens: u32,
+    pub output_tokens: u32,
+    pub reasoning_tokens: u32,
+    pub inter_token_latency_s: Option<f64>,
+    pub inter_event_latency_s: Option<f64>,
+    pub total_tokens: u32,
+    pub provider_usage: Option<ProviderUsage>,
+    pub request_start_unix_ns: u64,
+    pub request_end_unix_ns: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ProviderUsage {
+    pub input_tokens: Option<u32>,
+    pub output_tokens: Option<u32>,
+    pub total_tokens: Option<u32>,
+    pub reasoning_tokens: Option<u32>,
+}
+
+impl BenchmarkResult {
+    pub fn from_record(record: &RequestRecord) -> Result<Self> {
+        if record.status != Status::Completed {
+            return Err(anyhow!(
+                "{}",
+                record
+                    .error
+                    .as_ref()
+                    .map(|e| e.message.as_str())
+                    .unwrap_or("request failed")
+            ));
+        }
+        let m = &record.metrics;
+        let provider_usage = record.provider_usage.as_ref().map(|u| {
+            let n = |a: &str, b: &str| {
+                u.pointer(a)
+                    .or_else(|| u.pointer(b))
+                    .and_then(Value::as_u64)
+                    .and_then(|n| u32::try_from(n).ok())
+            };
+            ProviderUsage {
+                input_tokens: n("/input_tokens", "/prompt_tokens"),
+                output_tokens: n("/output_tokens", "/completion_tokens"),
+                total_tokens: n("/total_tokens", "/total_tokens"),
+                reasoning_tokens: n(
+                    "/output_tokens_details/reasoning_tokens",
+                    "/completion_tokens_details/reasoning_tokens",
+                ),
+            }
+        });
+        let output_tokens = u32::try_from(m.content_tokens.unwrap())?;
+        let reasoning_tokens = u32::try_from(m.reasoning_tokens.unwrap())?;
+        let input_tokens = u32::try_from(m.input_tokens)?;
+        Ok(Self {
+            ttft: m.ttft_ms.map(|n| Duration::from_secs_f64(n / 1000.0)),
+            ttfo: m.ttfo_ms.map(|n| Duration::from_secs_f64(n / 1000.0)),
+            total_latency: record.end.duration_since(record.start),
+            throughput: m.generation_tokens_per_second,
+            input_tokens,
+            output_tokens,
+            reasoning_tokens,
+            inter_token_latency_s: m.mean_inter_token_latency_ms.map(|n| n / 1000.0),
+            inter_event_latency_s: m.mean_inter_event_latency_ms.map(|n| n / 1000.0),
+            total_tokens: input_tokens
+                .checked_add(output_tokens)
+                .and_then(|n| n.checked_add(reasoning_tokens))
+                .ok_or_else(|| anyhow!("token total overflow"))?,
+            provider_usage,
+            request_start_unix_ns: record.start_time_unix_ns,
+            request_end_unix_ns: record.end_time_unix_ns,
+        })
+    }
+}
+
+impl BenchmarkSummary {
+    pub fn new(args: &Args, run_id: String, records: &[RequestRecord], interrupted: bool) -> Self {
+        let measured: Vec<_> = records
+            .iter()
+            .filter(|r| r.phase == Phase::Measurement)
+            .collect();
+        let successful: Vec<_> = measured
+            .iter()
+            .filter_map(|r| BenchmarkResult::from_record(r).ok())
+            .collect();
+        let mut errors = BTreeMap::new();
+        for record in &measured {
+            if let Some(error) = &record.error {
+                *errors.entry(error.message.clone()).or_default() += 1;
+            }
+        }
+        let now = Instant::now();
+        let start = measured.iter().min_by_key(|r| r.start);
+        let end = measured.iter().max_by_key(|r| r.end);
+        let config = BenchmarkConfig {
+            model: args.model.as_deref().unwrap(),
+            tokenizer: args.tokenizer.as_deref().unwrap(),
+            mean_input_tokens: args.input_tokens,
+            stddev_input_tokens: args.input_tokens_stddev,
+            mean_output_tokens: args.output_cap,
+            stddev_output_tokens: args.output_cap_stddev,
+            num_concurrent_requests: args.concurrency,
+        };
+        let mut summary = build_summary(
+            &run_id,
+            &config,
+            &successful,
+            measured.len(),
+            successful.iter().map(|r| u64::from(r.input_tokens)).sum(),
+            successful.iter().map(|r| u64::from(r.output_tokens)).sum(),
+            successful
+                .iter()
+                .map(|r| u64::from(r.reasoning_tokens))
+                .sum(),
+            &errors,
+            start.map_or(now, |r| r.start),
+            end.map_or(now, |r| r.end),
+            start.map_or(0, |r| r.start_time_unix_ns),
+            end.map_or(0, |r| r.end_time_unix_ns),
+        );
+        summary.run_configuration =
+            Some(serde_json::to_value(args).expect("validated configuration is serializable"));
+        summary.termination = Some(
+            if interrupted {
+                "interrupted"
+            } else {
+                "request_count"
+            }
+            .into(),
+        );
+        summary.warmup_attempts = Some(records.iter().filter(|r| r.phase == Phase::Warmup).count());
+        summary
+    }
+}
+
+pub fn print_records(records: &[RequestRecord]) {
+    let measured: Vec<_> = records
+        .iter()
+        .filter(|r| r.phase == Phase::Measurement)
+        .collect();
+    let successful: Vec<_> = measured
+        .iter()
+        .filter_map(|r| BenchmarkResult::from_record(r).ok())
+        .collect();
+    let now = Instant::now();
+    print_summary_to_stdout(
+        &successful,
+        measured.len() - successful.len(),
+        successful.iter().map(|r| u64::from(r.output_tokens)).sum(),
+        successful
+            .iter()
+            .map(|r| u64::from(r.reasoning_tokens))
+            .sum(),
+        measured.iter().map(|r| r.start).min().unwrap_or(now),
+        measured.iter().map(|r| r.end).max().unwrap_or(now),
+    );
+}
+pub struct ResultsWriter {
+    pub directory: PathBuf,
+    pub run_id: String,
+    records: tokio::fs::File,
+}
+
+impl ResultsWriter {
+    pub async fn new(parent: Option<&Path>) -> Result<Self> {
+        let parent = match parent {
+            Some(path) => path.to_owned(),
+            None => {
+                let dirs = ProjectDirs::from("", "", "llmnop")
+                    .context("could not locate results directory")?;
+                dirs.state_dir()
+                    .unwrap_or_else(|| dirs.data_local_dir())
+                    .join("results")
+            }
+        };
+        tokio::fs::create_dir_all(&parent).await?;
+        let run_id = format!("{}_{}", unix_time_ns(), std::process::id());
+        let directory = parent.join(&run_id);
+        tokio::fs::create_dir(&directory)
+            .await
+            .context("could not create run directory")?;
+        let records = tokio::fs::File::create_new(directory.join("requests.jsonl")).await?;
+        Ok(Self {
+            directory,
+            run_id,
+            records,
+        })
+    }
+
+    pub async fn append(&mut self, record: &RequestRecord) -> Result<()> {
+        let mut line = serde_json::to_vec(record)?;
+        line.push(b'\n');
+        self.records.write_all(&line).await?;
+        self.records.flush().await?;
+        Ok(())
+    }
+
+    pub async fn finish(&mut self, summary: &BenchmarkSummary) -> Result<()> {
+        self.records.flush().await?;
+        let path = self.directory.join("summary.json");
+        tokio::fs::write(path, serde_json::to_vec_pretty(summary)?).await?;
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
     use std::time::Duration;
 
     #[test]
@@ -966,38 +930,6 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_run_id_format() {
-        let run_id = generate_run_id().unwrap();
-        let mut parts = run_id.split('_');
-        let secs = parts.next().unwrap();
-        let nanos = parts.next().unwrap();
-
-        assert!(parts.next().is_none());
-        assert_eq!(secs.len(), 10);
-        assert_eq!(nanos.len(), 9);
-        assert!(secs.chars().all(|c| c.is_ascii_digit()));
-        assert!(nanos.chars().all(|c| c.is_ascii_digit()));
-    }
-
-    #[test]
-    fn test_run_results_dir_layout() {
-        let config = BenchmarkConfig {
-            model: "qwen/qwen3-4b-2507",
-            tokenizer: "Qwen/Qwen3-4B",
-            mean_input_tokens: 550,
-            stddev_input_tokens: 0,
-            mean_output_tokens: Some(150),
-            stddev_output_tokens: 0,
-            num_concurrent_requests: 1,
-        };
-        let path = run_results_dir(Path::new("/tmp/results"), &config, "1700000000_123456789");
-        assert_eq!(
-            path,
-            PathBuf::from("/tmp/results/qwen-qwen3-4b-2507_550_150/1700000000_123456789")
-        );
-    }
-
-    #[test]
     fn test_build_summary_has_nested_metrics() {
         let config = BenchmarkConfig {
             model: "qwen/qwen3-4b-2507",
@@ -1020,7 +952,7 @@ mod tests {
             inter_token_latency_s: Some(0.01),
             inter_event_latency_s: Some(0.02),
             total_tokens: 700,
-            provider_usage: Some(crate::benchmark::ProviderUsage {
+            provider_usage: Some(ProviderUsage {
                 input_tokens: Some(550),
                 output_tokens: Some(150),
                 total_tokens: Some(700),
@@ -1045,8 +977,8 @@ mod tests {
             1_700_000_001_000_000_000,
         );
 
-        assert_eq!(summary.schema_version, "2.2");
-        assert_eq!(summary.version, "2026-09-06-streaming.1");
+        assert_eq!(summary.schema_version, "2.3");
+        assert_eq!(summary.version, "2026-09-06-lifecycle.1");
         assert_eq!(summary.request_latency.unit, "ms");
         assert_eq!(
             summary.output_token_throughput_per_request.unit,

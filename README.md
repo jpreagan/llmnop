@@ -105,9 +105,9 @@ When `--thinking-budget` is set, it must be at least 1024 and smaller than `--ou
 
 | Flag                           | Default | Description                |
 | ------------------------------ | ------- | -------------------------- |
-| `--max-num-completed-requests` | 10      | Total requests to complete |
-| `--num-concurrent-requests`    | 1       | Parallel request count     |
-| `--timeout`                    | 600     | Request timeout in seconds |
+| `--requests` | 10      | Total requests to complete |
+| `--concurrency`    | 1       | Parallel request count     |
+| `--request-timeout`                    | 600     | Request timeout in seconds |
 
 ### Tokenization
 
@@ -135,8 +135,8 @@ Primary token metrics preserve llmnop's measured semantics: `output_token_count`
 ```bash
 llmnop --url http://localhost:8000/v1 --api-key token-abc123 \
   --model Qwen/Qwen3-4B-Instruct-2507 \
-  --num-concurrent-requests 10 \
-  --max-num-completed-requests 100
+  --concurrency 10 \
+  --requests 100
 ```
 
 **Controlled benchmark with fixed output length:**
@@ -168,7 +168,7 @@ llmnop --api messages --url http://localhost:8000/v1 --api-key token-abc123 \
 llmnop --url http://localhost:8000/v1 --api-key token-abc123 \
   --model Qwen/Qwen3-4B-Instruct-2507 \
   --output-format json \
-  --max-num-completed-requests 1 | jq '.request_latency.p99'
+  --requests 1 | jq '.request_latency.p99'
 ```
 
 **Custom tokenizer when model name doesn't match Hugging Face:**
@@ -221,3 +221,8 @@ Streaming clients require an explicit completion event; malformed and truncated 
 TTFT includes exposed reasoning; TTFO requires visible text. Missing timings are absent,
 and generation metrics exclude both the initial wait and completion metadata after the final text event.
 Token counts use assembled text, with provider usage kept separate. HTTP retries and redirects are disabled.
+
+Each measured attempt counts toward `--requests`, including failures; requests are not retried.
+`--concurrency` bounds active requests. `--warmup` is a separate phase excluded from measured results.
+`--request-timeout` limits each request through stream completion. Ctrl-C stops new work and records partial attempts.
+Per-attempt records are flushed to `requests.jsonl`, including statuses, deadlines, and partial observations.
