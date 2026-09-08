@@ -47,7 +47,7 @@ pub struct BenchmarkRequest {
     pub prompt: String,
     pub max_tokens: Option<u32>,
     pub thinking_budget_tokens: Option<u32>,
-    pub tokenizer: String,
+    pub tokenizer: std::sync::Arc<tokenizers::Tokenizer>,
     pub use_server_token_count: bool,
 }
 
@@ -415,14 +415,14 @@ fn compute_token_counts(
     prompt: &str,
     generated_text: &str,
     reasoning_text: &str,
-    tokenizer: &str,
+    tokenizer: &tokenizers::Tokenizer,
 ) -> Result<TokenCounts> {
-    let input_tokens = tokens::count_tokens(prompt, tokenizer)?;
-    let output_tokens = tokens::count_tokens(generated_text, tokenizer)?;
+    let input_tokens = u32::try_from(tokens::count(tokenizer, prompt)?)?;
+    let output_tokens = u32::try_from(tokens::count(tokenizer, generated_text)?)?;
     let reasoning_tokens = if reasoning_text.is_empty() {
         0
     } else {
-        tokens::count_tokens(reasoning_text, tokenizer)?
+        u32::try_from(tokens::count(tokenizer, reasoning_text)?)?
     };
 
     Ok(TokenCounts {

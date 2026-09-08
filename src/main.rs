@@ -18,9 +18,7 @@ use client::ApiClient;
 use client::anthropic::messages::MessagesClient;
 use futures::{StreamExt, stream::FuturesUnordered};
 use indicatif::{ProgressBar, ProgressStyle};
-use prompt::{PromptConfig, generate_prompt};
-use rand::prelude::*;
-use rand_distr::Normal;
+use prompt::PromptGenerator;
 use std::io::{self, IsTerminal};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -36,26 +34,6 @@ fn unix_time_now_ns() -> u64 {
         .ok()
         .and_then(|d| u64::try_from(d.as_nanos()).ok())
         .unwrap_or_default()
-}
-
-fn sample_max_tokens(mean: u32, stddev: u32, min_exclusive: Option<u32>) -> u32 {
-    if stddev == 0 {
-        return mean.max(1);
-    }
-
-    let dist = Normal::new(mean as f64, stddev as f64).unwrap();
-    let mut rng = rand::rng();
-
-    loop {
-        let sample = dist.sample(&mut rng);
-        if sample < 1.0 {
-            continue;
-        }
-        let tokens = sample.ceil() as u32;
-        if min_exclusive.is_none_or(|min| tokens > min) {
-            return tokens;
-        }
-    }
 }
 
 async fn run_benchmark_task(
@@ -102,15 +80,25 @@ async fn main() -> Result<()> {
     let overall_start = Instant::now();
     let overall_start_unix_ns = unix_time_now_ns();
 
-    let prompt_config = PromptConfig {
-        mean_input_tokens: args.mean_input_tokens,
-        stddev_input_tokens: args.stddev_input_tokens,
-    };
-
+    let loaded_tokenizer = Arc::new(tokens::load(&tokenizer)?);
+    let generator = PromptGenerator::new(&loaded_tokenizer)?;
     let mut prompts = Vec::with_capacity(args.max_num_completed_requests as usize);
+    let mut rng = rand::rng();
     for _ in 0..args.max_num_completed_requests {
-        let prompt = generate_prompt(&prompt_config, &tokenizer)?;
-        prompts.push(prompt);
+        let target =
+            prompt::sample_length(&mut rng, args.input_tokens, args.input_tokens_stddev, 1)?;
+        let cap = args
+            .output_cap
+            .map(|mean| {
+                prompt::sample_length(
+                    &mut rng,
+                    mean,
+                    args.output_cap_stddev,
+                    args.thinking_budget.map_or(1, |b| b + 1),
+                )
+            })
+            .transpose()?;
+        prompts.push((generator.generate(&mut rng, target)?, cap));
     }
 
     let mut all_results = Vec::with_capacity(args.max_num_completed_requests as usize);
@@ -147,25 +135,17 @@ async fn main() -> Result<()> {
     while next_request_index < args.max_num_completed_requests
         && in_flight.len() < args.num_concurrent_requests as usize
     {
-        let prompt = &prompts[next_request_index as usize];
+        let (prompt, max_tokens) = &prompts[next_request_index as usize];
         let model_name = model.clone();
         let prompt_clone = prompt.clone();
         let client_clone = client.clone();
-        let tokenizer_clone = tokenizer.clone();
-        let min_output_tokens = if matches!(api, ApiType::Messages) {
-            args.thinking_budget_tokens
-        } else {
-            None
-        };
-        let max_tokens = args
-            .mean_output_tokens
-            .map(|mean| sample_max_tokens(mean, args.stddev_output_tokens, min_output_tokens));
+        let tokenizer_clone = loaded_tokenizer.clone();
 
         let request = BenchmarkRequest {
             model: model_name,
             prompt: prompt_clone,
-            max_tokens,
-            thinking_budget_tokens: args.thinking_budget_tokens,
+            max_tokens: *max_tokens,
+            thinking_budget_tokens: args.thinking_budget,
             tokenizer: tokenizer_clone,
             use_server_token_count,
         };
@@ -202,25 +182,18 @@ async fn main() -> Result<()> {
                 pb.inc(1);
 
                 if !timeout_occurred && next_request_index < args.max_num_completed_requests {
-                    let prompt = &prompts[next_request_index as usize];
+                    let (prompt, max_tokens) = &prompts[next_request_index as usize];
                     let model_name = model.clone();
                     let prompt_clone = prompt.clone();
                     let client_clone = client.clone();
-                    let tokenizer_clone = tokenizer.clone();
-                    let min_output_tokens = if matches!(api, ApiType::Messages) {
-                        args.thinking_budget_tokens
-                    } else {
-                        None
-                    };
-                    let max_tokens = args.mean_output_tokens.map(|mean| {
-                        sample_max_tokens(mean, args.stddev_output_tokens, min_output_tokens)
-                    });
+                    let tokenizer_clone = loaded_tokenizer.clone();
+
 
                     let request = BenchmarkRequest {
                         model: model_name,
                         prompt: prompt_clone,
-                        max_tokens,
-                        thinking_budget_tokens: args.thinking_budget_tokens,
+                        max_tokens: *max_tokens,
+                        thinking_budget_tokens: args.thinking_budget,
                         tokenizer: tokenizer_clone,
                         use_server_token_count,
                     };
@@ -269,10 +242,10 @@ async fn main() -> Result<()> {
     let config = BenchmarkConfig {
         model: &model,
         tokenizer: &tokenizer,
-        mean_input_tokens: args.mean_input_tokens,
-        stddev_input_tokens: args.stddev_input_tokens,
-        mean_output_tokens: args.mean_output_tokens,
-        stddev_output_tokens: args.stddev_output_tokens,
+        mean_input_tokens: args.input_tokens,
+        stddev_input_tokens: args.input_tokens_stddev,
+        mean_output_tokens: args.output_cap,
+        stddev_output_tokens: args.output_cap_stddev,
         num_concurrent_requests: args.num_concurrent_requests,
     };
 
