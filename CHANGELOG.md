@@ -10,12 +10,19 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 - Support local tokenizer JSON files through `--tokenizer`. ([#69](https://github.com/jpreagan/llmnop/pull/69))
 - Add `--warmup` for requests completed before measurement and excluded from benchmark statistics. ([#71](https://github.com/jpreagan/llmnop/pull/71))
+- Restore `--results-dir`. ([#72](https://github.com/jpreagan/llmnop/pull/72))
 
 ### Changed
 
 - Rename `--mean-input-tokens` to `--input-tokens`, `--stddev-input-tokens` to `--input-tokens-stddev`, `--mean-output-tokens` to `--output-cap`, `--stddev-output-tokens` to `--output-cap-stddev`, and `--thinking-budget-tokens` to `--thinking-budget`. ([#69](https://github.com/jpreagan/llmnop/pull/69))
 - Replace `--max-num-completed-requests` and `--num-concurrent-requests` with `--requests` and `--concurrency`. Failed attempts count toward the request budget and are not retried. ([#71](https://github.com/jpreagan/llmnop/pull/71))
 - Replace the benchmark-wide `--timeout` with a per-request `--request-timeout`. Save partial results on timeout or interruption. ([#71](https://github.com/jpreagan/llmnop/pull/71))
+- Rename `individual_responses.jsonl` to `requests.jsonl` and revise the JSON result schema to include separate warmup outcomes, sample counts, and null values for unavailable measurements. Calculate summary statistics from completed measurement requests. ([#72](https://github.com/jpreagan/llmnop/pull/72))
+- Replace `--output-format`, `--json`, and `--quiet` with `--format table|json|none`, and rename `--use-server-token-count` to `--request-usage`. ([#72](https://github.com/jpreagan/llmnop/pull/72))
+
+### Removed
+
+- Remove the redundant `version` field from summary JSON. Use `schema_version` to identify the output format and `llmnop_version` to identify the producing release. ([#72](https://github.com/jpreagan/llmnop/pull/72))
 
 ### Fixed
 

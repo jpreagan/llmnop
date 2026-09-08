@@ -1,6 +1,6 @@
 use super::*;
 use crate::benchmark::Status;
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
@@ -323,7 +323,6 @@ async fn scheduler_bounds_concurrency_counts_failures_and_exports_recomputable_r
         "5",
         "--concurrency",
         "2",
-        "--quiet",
     ]);
     let client = client::http_client().unwrap();
     let tokenizer = Arc::new(tokens::test_tokenizer());
@@ -333,7 +332,7 @@ async fn scheduler_bounds_concurrency_counts_failures_and_exports_recomputable_r
     let (_tx, rx) = watch::channel(false);
     let parent = std::env::temp_dir().join(format!("llmnop-test-{}", benchmark::unix_time_ns()));
     let mut writer = ResultsWriter::new(Some(&parent)).await.unwrap();
-    let records = run_phase(&args, &client, &tokenizer, requests, &rx, &mut writer)
+    let mut records = run_phase(&args, &client, &tokenizer, requests, &rx, &mut writer)
         .await
         .unwrap();
     assert_eq!(records.len(), 5);
@@ -355,6 +354,11 @@ async fn scheduler_bounds_concurrency_counts_failures_and_exports_recomputable_r
     let mut ids: Vec<_> = records.iter().map(|r| r.request_id).collect();
     ids.sort_unstable();
     assert_eq!(ids, vec![0, 1, 2, 3, 4]);
+    let summary = BenchmarkSummary::new(&args, writer.run_id.clone(), &records, false);
+    writer.finish(&summary).await.unwrap();
+    assert_eq!(summary.measurement.completed, 4);
+    assert_eq!(summary.metrics["ttfo_ms"].count, 4);
+    assert_eq!(summary.completed_token_totals.generated_tokens, 8);
     let exported = tokio::fs::read_to_string(writer.directory.join("requests.jsonl"))
         .await
         .unwrap();
@@ -363,12 +367,41 @@ async fn scheduler_bounds_concurrency_counts_failures_and_exports_recomputable_r
         .map(|l| serde_json::from_str(l).unwrap())
         .collect();
     assert_eq!(rows.len(), 5);
-    assert_eq!(
-        rows.iter().filter(|r| r["status"] == "completed").count(),
-        4
-    );
+    let total: u64 = rows
+        .iter()
+        .filter(|r| r["status"] == "completed")
+        .map(|r| r["metrics"]["generated_tokens"].as_u64().unwrap())
+        .sum();
+    assert_eq!(total, summary.completed_token_totals.generated_tokens);
+    let rate = total as f64 / (summary.measurement_duration_ms.unwrap() / 1000.0);
+    assert_eq!(Some(rate), summary.completed_generated_tokens_per_second);
+    let duration_ns = records.iter().map(|r| r.end_time_unix_ns).max().unwrap()
+        - records.iter().map(|r| r.start_time_unix_ns).min().unwrap();
+    assert!((summary.measurement_duration_ms.unwrap() - duration_ns as f64 / 1e6).abs() < 1e-9);
+    records
+        .iter_mut()
+        .find(|r| r.status == Status::Completed)
+        .unwrap()
+        .phase = Phase::Warmup;
+    let without_warmup = BenchmarkSummary::new(&args, writer.run_id.clone(), &records, false);
+    assert_eq!(without_warmup.warmup.completed, 1);
+    assert_eq!(without_warmup.measurement.completed, 3);
+    assert_eq!(without_warmup.metrics["ttfo_ms"].count, 3);
+    assert_eq!(without_warmup.completed_token_totals.generated_tokens, 6);
     assert_eq!(finish_server(task).await.len(), 5);
     tokio::fs::remove_dir_all(parent).await.unwrap();
+}
+
+#[test]
+fn empty_summary_reports_missing_samples() {
+    let args = Args::parse_from(["llmnop"]);
+    let summary = BenchmarkSummary::new(&args, "test".into(), &[], true);
+    let json = serde_json::to_value(summary).unwrap();
+    assert_eq!(json["metrics"]["ttft_ms"]["count"], 0);
+    assert_eq!(json["metrics"]["ttft_ms"]["mean"], Value::Null);
+    assert_eq!(json["measurement_duration_ms"], Value::Null);
+    assert_eq!(json["termination"], "interrupted");
+    assert_eq!(json["configuration"]["api"], json!("chat"));
 }
 
 #[tokio::test]

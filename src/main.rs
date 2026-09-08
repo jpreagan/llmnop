@@ -58,7 +58,7 @@ fn prepare(
             &prompt,
             cap,
             args.thinking_budget,
-            args.use_server_token_count,
+            args.request_usage,
         );
         prepared.push_back(PreparedRequest {
             id: if warmup { index } else { args.warmup + index },
@@ -86,9 +86,7 @@ async fn run_phase(
     cancel: &watch::Receiver<bool>,
     writer: &mut ResultsWriter,
 ) -> Result<Vec<RequestRecord>> {
-    let pb = if matches!(args.effective_output_format(), OutputFormat::None)
-        || !io::stderr().is_terminal()
-    {
+    let pb = if !io::stderr().is_terminal() {
         ProgressBar::hidden()
     } else {
         ProgressBar::new(requests.len() as u64)
@@ -160,7 +158,7 @@ async fn main() -> Result<ExitCode> {
     let warmup = prepare(&args, &client, &tokenizer, &generator, Phase::Warmup)?;
     let measured = prepare(&args, &client, &tokenizer, &generator, Phase::Measurement)?;
     drop(generator);
-    let mut writer = ResultsWriter::new(None).await?;
+    let mut writer = ResultsWriter::new(args.results_dir.as_deref()).await?;
     let (cancel_tx, cancel) = watch::channel(false);
     let signals = tokio::spawn(async move {
         if tokio::signal::ctrl_c().await.is_ok() {
@@ -173,8 +171,8 @@ async fn main() -> Result<ExitCode> {
     signals.abort();
     let summary = BenchmarkSummary::new(&args, writer.run_id.clone(), &records, interrupted);
     writer.finish(&summary).await?;
-    match args.effective_output_format() {
-        OutputFormat::Table => output::print_records(&records),
+    match args.format {
+        OutputFormat::Table => io::stdout().lock().write_all(summary.table().as_bytes())?,
         OutputFormat::Json => {
             let mut stdout = io::stdout().lock();
             serde_json::to_writer(&mut stdout, &summary)?;
@@ -183,9 +181,7 @@ async fn main() -> Result<ExitCode> {
         OutputFormat::None => {}
     }
     eprintln!("Results: {}", writer.directory.display());
-    let failed = records
-        .iter()
-        .any(|r| r.status != benchmark::Status::Completed);
+    let failed = summary.measurement.unsuccessful() + summary.warmup.unsuccessful() > 0;
     Ok(if interrupted {
         ExitCode::from(130)
     } else if failed {

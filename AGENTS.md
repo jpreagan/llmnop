@@ -21,7 +21,7 @@ CLI tool for benchmarking streaming LLM inference endpoints.
 
 ## Output Version
 
-- Bump `BenchmarkSummary.version` in `src/output.rs` whenever output fields or semantics change.
+- Bump `BenchmarkSummary.schema_version` in `src/output.rs` whenever released output fields or semantics change. It versions both `summary.json` and `requests.jsonl`; changes within an unreleased schema share its version.
 
 ## Code Style
 
