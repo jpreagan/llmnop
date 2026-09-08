@@ -124,11 +124,49 @@ async fn all_three_wire_formats_preserve_local_counts_and_provider_usage() {
     ] {
         let (url, task, _) = server(vec![Reply::sse(payload)]).await;
         let client = client::http_client().unwrap();
+        let mut extra = match api {
+            args::ApiType::Chat => json!({"reasoning_effort": "high"}),
+            args::ApiType::Responses => json!({"reasoning": {"effort": "high"}}),
+            args::ApiType::Messages => {
+                json!({"thinking": {"type": "enabled", "budget_tokens": 1024}})
+            }
+        };
+        extra["temperature"] = json!(0.5);
+        extra["vendor"] = json!({"enabled": true, "values": [1, "two", null], "model": "nested"});
+        let config = Args::parse_from([
+            "llmnop",
+            "--url",
+            &url,
+            "--model",
+            "test",
+            "--api-key",
+            "test-secret",
+            "--api",
+            match api {
+                args::ApiType::Chat => "chat",
+                args::ApiType::Responses => "responses",
+                args::ApiType::Messages => "messages",
+            },
+            "--requests",
+            "1",
+            "--input-tokens",
+            "2",
+            "--output-cap",
+            "8",
+            "--request-usage",
+            "--extra-inputs",
+            &serde_json::to_string(&extra).unwrap(),
+        ]);
+        config.validate().unwrap();
+        let tokenizer = tokens::test_tokenizer();
+        let generator = PromptGenerator::new(&tokenizer).unwrap();
+        let mut requests =
+            prepare(&config, &client, &tokenizer, &generator, Phase::Measurement).unwrap();
         let (_tx, rx) = watch::channel(false);
         let record = benchmark::capture(
             client.clone(),
             api,
-            prepared(&client, api, &url, 0),
+            requests.pop_front().unwrap(),
             Duration::from_secs(2),
             rx,
         )
@@ -148,6 +186,13 @@ async fn all_three_wire_formats_preserve_local_counts_and_provider_usage() {
         let wire = finish_server(task).await;
         let (headers, body) = &wire[0];
         assert_eq!(body["stream"], true);
+        for (key, value) in extra.as_object().unwrap() {
+            assert_eq!(&body[key], value);
+        }
+        let summary = BenchmarkSummary::new(&config, "test".into(), &[], false);
+        let saved = serde_json::to_value(summary).unwrap();
+        assert_eq!(saved["configuration"]["extra_inputs"], json!(extra));
+        assert!(saved["configuration"].get("thinking_budget").is_none());
         assert!(headers.contains(if api == args::ApiType::Messages {
             "x-api-key: test-secret"
         } else {

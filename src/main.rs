@@ -38,17 +38,10 @@ fn prepare(
     let mut rng = rand::rng();
     for index in 0..count {
         let input_target =
-            prompt::sample_length(&mut rng, args.input_tokens, args.input_tokens_stddev, 1)?;
+            prompt::sample_length(&mut rng, args.input_tokens, args.input_tokens_stddev)?;
         let cap = args
             .output_cap
-            .map(|mean| {
-                prompt::sample_length(
-                    &mut rng,
-                    mean,
-                    args.output_cap_stddev,
-                    args.thinking_budget.map_or(1, |b| b + 1),
-                )
-            })
+            .map(|mean| prompt::sample_length(&mut rng, mean, args.output_cap_stddev))
             .transpose()?;
         let prompt = generator.generate(&mut rng, input_target)?;
         let input_tokens = tokens::count(tokenizer, &prompt)?;
@@ -57,7 +50,7 @@ fn prepare(
             args.model.as_deref().unwrap(),
             &prompt,
             cap,
-            args.thinking_budget,
+            args.extra_inputs.as_ref(),
             args.request_usage,
         );
         prepared.push_back(PreparedRequest {
