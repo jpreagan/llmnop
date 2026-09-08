@@ -2,262 +2,130 @@
   <img src="assets/llmnop.png" alt="llmnop" width="420">
 </p>
 
-<p align="center">
-  <a href="#installation">Installation</a> | <a href="#quick-start">Quick Start</a> | <a href="#what-it-measures">Metrics</a> | <a href="#examples">Examples</a>
-</p>
+`llmnop` benchmarks the performance of LLM inference endpoints. It answers the question:
 
-`llmnop` is a fast, lightweight CLI that benchmarks LLM inference endpoints with detailed latency and throughput metrics.
+> At concurrency N, how fast is each request on this endpoint under a specified workload?
 
-It's a single binary with no dependencies, just download and run. Use it to compare inference providers, validate deployment performance, tune serving parameters, or establish baselines before and after changes.
+Use it to compare models, providers, and serving configurations, or see how performance changes as more requests share an endpoint. It measures the experience through the API, including network delays and server queueing.
 
-## Installation
+## Install
 
-Use the installer:
-
-```bash
-curl -sSfL https://llmnop.xyz/install.sh | sh
-```
-
-It places `llmnop` in `~/.local/bin`. Make sure that's on your `PATH`.
-
-Or use Homebrew:
+With Homebrew:
 
 ```bash
 brew install jpreagan/tap/llmnop
 ```
 
-## Updating
-
-If you used the installer, update in place:
+Or with the standalone installer:
 
 ```bash
-llmnop update
+curl -sSfL https://llmnop.xyz/install.sh | sh
 ```
 
-If you used Homebrew:
+The installer uses `$XDG_BIN_HOME` if set, otherwise `~/.local/bin`. Make sure the directory is on your `PATH`.
+
+Update with `brew upgrade llmnop` or, for standalone installs, `llmnop update`.
+
+## Run a benchmark
+
+With vLLM serving `Qwen/Qwen3.8-27B`:
 
 ```bash
-brew upgrade llmnop
+llmnop \
+  --url http://localhost:8000/v1 \
+  --api chat \
+  --api-key token-abc123 \
+  --model Qwen/Qwen3.8-27B \
+  --input-tokens 550 \
+  --output-cap 2048 \
+  --requests 10 \
+  --concurrency 4
 ```
 
-## Quick Start
+This sends 10 requests with up to four in flight. Each completed or failed attempt frees a slot for the next request. Failed attempts count toward the total and are not retried.
 
-```bash
-llmnop --url http://localhost:11434/v1 \
-  --api responses \
-  --model qwen3.8:27b-mlx \
-  --tokenizer Qwen/Qwen3.8-27B \
-  --input-tokens 550 --output-cap 128 \
-  --requests 20 --concurrency 4
-```
+Change the URL and model to use your endpoint. `--tokenizer` accepts a Hugging Face tokenizer ID or a local `tokenizer.json`. When omitted, it uses the model name.
 
-`--url` and `--model` are required for benchmarks. Authentication is optional.
-Use `llmnop --help` for the complete option list. Commands such as `update`
-work without an endpoint; self-update is available in standalone builds.
+All requests stream. The API option selects the path appended to your base URL:
 
-## What It Measures
+| `--api`          | Path                | Authentication |
+| ---------------- | ------------------- | -------------- |
+| `chat` (default) | `/chat/completions` | Bearer token   |
+| `responses`      | `/responses`        | Bearer token   |
+| `messages`       | `/messages`         | `x-api-key`    |
 
-At a specified concurrency, llmnop measures how quickly each request receives
-output and completes, and how much completed work the endpoint delivers.
-Each finished attempt frees a slot for another request. Failures count toward
-`--requests`; there are no automatic retries or redirects. Concurrency is a
-ceiling, with fewer active requests during startup and the final drain.
+Include the version prefix, such as `/v1`, in `--url`. For authenticated endpoints, pass `--api-key "$API_KEY"`. It is optional for local servers that do not require authentication.
 
-All API modes stream: `chat` uses `/chat/completions`, `responses` uses
-`/responses`, and `messages` uses `/messages`. Paths are appended to the supplied
-base URL, including any version prefix. The base URL must not contain credentials,
-a query, or a fragment. `--api-key` supplies bearer authentication for Chat and
-Responses, or `x-api-key` authentication for Messages.
+## Read the results
 
-| Measurement | Definition |
-| --- | --- |
-| TTFT | Request start to the first nonempty content or exposed reasoning delta. |
-| TTFO | Request start to the first nonempty content delta. |
-| Request latency | Request start to the API's terminal completion event. |
-| Generation window | First to last nonempty content or reasoning event. |
-| Generation rate | `(generated_tokens - 1) / generation_window_seconds`. |
-| Estimated inter-token latency | `generation_window_ms / (generated_tokens - 1)`. |
-| Mean stream-event gap | Generation window divided by the number of qualifying events minus one. |
-| Longest stream-event gap | Maximum interval between qualifying events. |
-| Input tokens | Locally tokenized prompt text, excluding server-added formatting. |
-| Content tokens | Locally tokenized streamed response content, including streamed refusals. |
-| Exposed reasoning tokens | Locally tokenized streamed reasoning text or summaries. |
-| Generated tokens | Content tokens plus exposed reasoning tokens. |
+| Question                                  | What to look at                                                                                                       |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| How long before anything arrives?         | **TTFT:** time to the first nonempty content or exposed reasoning.                                                    |
+| How long before the answer starts?        | **TTFO:** time to the first nonempty response content.                                                                |
+| How long until the request finishes?      | **Request latency:** time from sending the request to stream completion.                                              |
+| How fast does generation arrive?          | **Generation rate:** locally counted content and reasoning tokens per second during generation.                       |
+| Does the stream stall?                    | **Mean and longest stream-event gaps:** pauses between content or reasoning deliveries.                               |
+| How consistent is the experience?         | **Mean and percentiles:** compare the median (p50) with slower requests at p95 and p99.                               |
+| How much work does the endpoint complete? | **Completed requests/s and generated tokens/s:** throughput across the measured run.                                  |
+| Are requests completing reliably?         | **Completed, failed, timed out, and cancelled counts.** Output-limit and empty completions are identified separately. |
 
-Timing starts immediately before sending a prepared HTTP request and includes
-connection setup, endpoint queueing, and network delays. It excludes local prompt
-preparation and waiting for a concurrency slot. A valid terminal event is `[DONE]`
-for Chat, a completed response or supported normal limit/filter termination for
-Responses, and `message_stop` for Messages. EOF alone does not establish success.
-A Chat finish reason is retained while waiting for `[DONE]` and any intervening usage.
+Repeat a workload at different concurrency levels, keeping input sizes, output caps, tokenizer, and reasoning settings consistent. Check actual output lengths when comparing timings.
 
-TTFT and TTFO are client observations of text-bearing events, not individual model
-tokens. A single event can carry multiple tokens or both content and reasoning;
-it counts as one event. Metadata, heartbeats, and tool-call arguments do not count
-as text delivery. Inter-token latency and generation rate are token-normalized
-estimates, not measurements of individual model token intervals. Neither measures
-pure prefill speed or internal reasoning duration.
+A few details matter when comparing runs:
 
-Unobservable measurements are JSON `null` and shown as `—` in the table. No content
-means no TTFO. No text events means no TTFT. A single event has a zero generation
-window but no measurable generation rate or event gap. Token-normalized rate and
-latency require at least two locally measured tokens and a positive window.
-Zero observed reasoning tokens does not establish that the model did no reasoning.
-Reasoning representations are recorded in `reasoning_kinds` (`text`, `summary`).
+- **Only completed measured requests enter the summary statistics.** Check failures and timeouts alongside latency. Warmup is excluded.
+- **The API may hide reasoning.** TTFT measures what is delivered, not when the model internally starts generating. No exposed reasoning does not mean no reasoning occurred. These timings do not isolate prefill speed.
+- **Streaming events are not individual tokens.** Events can contain several tokens. Generation rate and inter-token latency are estimates over the first-to-last text delivery window; the rate uses `(generated tokens − 1) / window`.
+- **Missing measurements stay missing.** For example, reasoning without response content has no TTFO. Unavailable values appear as `—` in the table and `null` in JSON.
 
-## Workload
+## Shape the workload
 
-The sole workload is sampled Shakespeare text. The corpus matches the sonnet corpus
-in [AIPerf](https://github.com/ai-dynamo/aiperf). Nonempty stripped lines are joined
-with spaces in fixed 10,000-character chunks, then tokenized once. Each prompt
-samples a random contiguous token window, wrapping around the corpus as needed.
+Prompts are passages sampled from Shakespeare, starting at random token positions and sized to the requested input length. Varying the starting position reduces prefix-cache reuse compared with repeatedly sending the same prompt. This is a synthetic load test, not an evaluation of answer quality or coding ability.
 
-`--input-tokens` sets the mean token target, and `--input-tokens-stddev` sets its
-standard deviation. With a zero standard deviation the target is fixed. Otherwise,
-lengths are sampled from a normal distribution conditioned on nonnegative values,
-rounded upward, with a minimum of one. Decoded prompts are re-encoded and trimmed
-or topped up to meet the target. Preparation fails after ten unsuccessful
-adjustments rather than silently accepting a different size.
+| Option                  | Meaning                             | Default                        |
+| ----------------------- | ----------------------------------- | ------------------------------ |
+| `--input-tokens`        | Mean prompt-text token target       | `550`                          |
+| `--input-tokens-stddev` | Variation in input targets          | `0`                            |
+| `--output-cap`          | Mean requested generation-token cap | Omitted; required for Messages |
+| `--output-cap-stddev`   | Variation in output caps            | `0`                            |
 
-These mechanics follow AIPerf's sonnet generator, with independent checks for
-round-trip length and arbitrary corpus wrapping.
+Zero standard deviation gives every request the same target or cap, and the prompt text still varies. Nonzero values sample positive integer lengths from a normal distribution. Input targets count prompt text using the selected tokenizer, excluding server-added formatting. Varying output caps requires `--output-cap`.
 
-`--output-cap` and `--output-cap-stddev` control the requested generation cap,
-not the actual response length. Responses may stop earlier or an endpoint may
-ignore an unsupported parameter. API mappings are:
+**An output cap is a ceiling, not a promised response length.** A model may finish earlier or spend its allowance reasoning before producing an answer. A server may also ignore unsupported cap fields: llmnop sends `max_completion_tokens` for Chat, `max_output_tokens` for Responses, and `max_tokens` for Messages. Ollama versions that ignore the Chat field can be tested through Responses or Messages instead.
 
-| API | Cap field |
-| --- | --- |
-| Chat | `max_completion_tokens` |
-| Responses | `max_output_tokens` |
-| Messages | `max_tokens` (required) |
+Use `--requests` to set the number of measured attempts (default `10`) and `--concurrency` to limit simultaneous requests (default `1`). Optional `--warmup N` runs N additional attempts before measurement. `--request-timeout` limits each entire request, including its stream, to 600 seconds by default. Ctrl-C cancels the run and saves the results collected so far.
 
-Some Ollama Chat implementations ignore `max_completion_tokens`. In that case,
-use Responses or Messages for controlled caps. llmnop records both requested caps
-and actual locally measured counts; it does not infer a limit finish merely from
-those counts. Reasoning's contribution to the provider's cap depends on its API
-and model.
+### Reasoning and other request settings
 
-A nonzero output-cap standard deviation requires an output cap.
+Pass model- or server-specific fields through `--extra-inputs` as one JSON object. For example:
 
-`--extra-inputs` accepts one JSON object of additional request fields. Fields are merged at the top level and sent unchanged on every request, including warmup. For example:
+| API       | Example                                                                                   |
+| --------- | ----------------------------------------------------------------------------------------- |
+| Chat      | `--extra-inputs '{"reasoning_effort":"low"}'`                                             |
+| Responses | `--extra-inputs '{"reasoning":{"effort":"low"}}'`                                         |
+| Messages  | `--output-cap 2048 --extra-inputs '{"thinking":{"type":"enabled","budget_tokens":1024}}'` |
 
-```bash
---extra-inputs '{"reasoning_effort":"high","temperature":0.7}'
---extra-inputs '{"reasoning":{"effort":"high"}}'
---extra-inputs '{"thinking":{"type":"enabled","budget_tokens":1024}}'
-```
+These fields go directly into every request. Supported settings depend on the model and server; choose an output cap that satisfies their requirements. llmnop does not translate effort levels or adjust caps around a thinking budget.
 
-These examples configure Chat reasoning effort, Responses reasoning effort, and Messages thinking respectively. Supported fields, values, and defaults depend on the model and server; llmnop does not translate or validate their meaning. For Messages thinking, choose an output cap that satisfies the endpoint's requirements. Variable output caps are not adjusted around a thinking budget.
+Extra inputs cannot replace fields controlled by llmnop, such as the model, messages, streaming mode, or output cap. Use `--api-key` for credentials. Extra inputs are saved in the results.
 
-The fields `model`, `stream`, `messages`, `input`, `prompt`, `max_tokens`, `max_completion_tokens`, `max_output_tokens`, and `stream_options` are reserved and rejected, even when the corresponding option is omitted. Use llmnop's workload and usage controls for those fields. Additional fields are saved verbatim under `configuration.extra_inputs` in `summary.json`; keep authentication credentials in `--api-key`.
+## Save and inspect results
 
-`--tokenizer` accepts a Hugging Face identifier or a local `tokenizer.json` file.
-The default identifier is the model name. Tokenizer truncation and padding are
-disabled for measurement. Tokenization of assembled content and reasoning occurs
-after streaming, outside request timing, on blocking workers. A slot is replenished
-without waiting for that tokenization. Text is discarded after counting.
+Every run saves two files and prints their location:
 
-## Run Controls
+- **`summary.json`** — configuration, outcome counts, throughput, and metric statistics.
+- **`requests.jsonl`** — one record per attempted request, with timings, token counts, finish reason, provider usage, and any error. Warmup records are marked separately.
 
-`--requests` defaults to 10 measured attempts. `--concurrency` defaults to 1.
-`--warmup` defaults to 0 and specifies a total number of additional attempts, using
-the same concurrency ceiling. Warmup finishes before measured requests begin; its
-records and outcome counts are retained separately. Warmup does not guarantee any
-particular server cache state.
+Use `--results-dir ./results` to choose where run directories are created. Otherwise, llmnop uses your platform's application data/state directory.
 
-`--request-timeout` is a per-request deadline in seconds, including the complete
-stream. Fractional seconds are supported. A timed-out request is cancelled locally
-and retains observations received before its deadline. Ctrl-C stops dispatching
-requests, cancels active requests, and writes the available results. The endpoint
-may take additional time to stop its own work after a client disconnects.
+The default stdout format is a table. Use `--format json` for a machine-readable summary or `--format none` to rely on the saved files. Progress and diagnostics go to stderr. Prompt and response text are not saved.
 
-## Results
+Primary token counts use the selected local tokenizer. Provider-reported usage is saved separately and never substituted into local metrics. `--request-usage` asks Chat endpoints to include optional usage; usage returned by any API is recorded automatically.
 
-Every run writes a unique directory containing:
+Exit codes: `0` for all attempts completed, `1` for request or operational failures, `2` for invalid arguments, and `130` for interruption. Reaching an output cap is a completion, not a failure.
 
-- `summary.json`: configuration, outcomes, totals, and statistics.
-- `requests.jsonl`: one measurement record per attempted request, including warmup.
+Run `llmnop --help` for the full option list.
 
-`summary.json` records `schema_version` for the structure and semantics of both result files, and `llmnop_version` for the release that produced them.
+## License
 
-Use `--results-dir` to choose the parent directory. Defaults are:
-
-- macOS: `~/Library/Application Support/llmnop/results`
-- Linux: `${XDG_STATE_HOME:-$HOME/.local/state}/llmnop/results`
-- Windows: the platform-local llmnop data directory, under `results`
-
-`--format table|json|none` controls stdout only. Progress, errors, and the result location go to stderr. Progress is shown only when stderr is a terminal. Prompt text, response text, credentials, and individual event histories are not exported.
-
-Each request record contains its stable ID and phase, timestamps, elapsed time,
-status, HTTP status, provider finish reason, sampled input target, requested output
-cap, metrics, reasoning representation, provider usage, and error details.
-Records are appended as accounting completes and need not be in request-ID order.
-Failed and cancelled requests retain partial observations; `request_latency_ms`
-is null for these requests, while `elapsed_ms` records time to their terminal outcome.
-
-Durations are measured using a monotonic clock. Exported Unix nanosecond timestamps
-share a fixed wall-clock anchor so changes to the system clock during a run cannot
-change durations or cross-request timing. The aggregate measurement interval runs
-from the first measured request's start to the last measured request's termination,
-including failures. Preparation, warmup, and final reporting are excluded.
-
-Summary metric distributions include **completed measured requests only**. Every
-metric has its own sample count, excluding null observations. Statistics are the
-arithmetic mean, population standard deviation, min/max, and linearly interpolated
-percentiles at indices `p * (n - 1)`. A small sample's p99 is descriptive and does
-not establish a reliable population tail estimate.
-
-Aggregate request throughput is completed measured requests divided by the
-measurement interval. Aggregate token throughput is locally counted generated
-tokens from those completed requests divided by the same interval. Partial tokens
-from unsuccessful requests remain in the request records and do not enter
-completed-work throughput. Output-limit completions are counted separately from
-failures; empty text completions can still be successful protocol completions.
-
-`--request-usage` asks Chat endpoints to include optional streaming usage. Usage
-returned by any API is always saved separately in `provider_usage`, using that
-API's field names. For Messages, later non-null usage fields update earlier ones. Provider
-counts never replace local counts or enter local rate calculations; reasoning
-subcounts must not be added again to provider totals that already include them.
-
-Exit status is 0 when all attempted requests complete, 1 for request/setup/export
-failures, 2 for invalid arguments, and 130 for an interrupted run. Results are
-preserved for normal request failures, deadlines, and interruptions.
-
-### Schema 3 migration
-
-This overhaul changes the JSON schema to `3.0`. Scalar run values are plain numbers;
-per-request metrics use unit-bearing names and unavailable values are null. Every
-summary distribution includes a sample count. The old `individual_responses.jsonl`
-becomes `requests.jsonl`.
-
-| Previous option | Replacement |
-| --- | --- |
-| `--mean-input-tokens` | `--input-tokens` |
-| `--stddev-input-tokens` | `--input-tokens-stddev` |
-| `--mean-output-tokens` | `--output-cap` |
-| `--stddev-output-tokens` | `--output-cap-stddev` |
-| `--thinking-budget-tokens`, `--thinking-budget` | `--extra-inputs '{"thinking":{"type":"enabled","budget_tokens":1024}}'` |
-| `--max-num-completed-requests` | `--requests`, `-n` |
-| `--num-concurrent-requests` | `--concurrency`, `-c` |
-| `--timeout` | `--request-timeout` (now a per-request deadline) |
-| `--use-server-token-count` | `--request-usage` |
-| `--output-format`, `--json`, `--quiet` | `--format table|json|none` |
-
-Per-request generation rate now uses `(generated_tokens - 1) / window`, making it
-the reciprocal of estimated inter-token latency. Previous releases used
-`generated_tokens / window`. Aggregate throughput still counts all generated tokens.
-
-## Development
-
-```bash
-cargo fmt --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test --all-features
-```
-
-Tests include local HTTP fixtures for all three streaming APIs, fragmented SSE,
-partial failures, deadlines, cancellation, concurrency, and exported statistics.
-Changes to streaming or measurements should also be exercised against a real
-endpoint using the applicable API modes.
+[Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0)

@@ -6,6 +6,8 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 
+## [0.11.0]
+
 ### Added
 
 - Support local tokenizer JSON files through `--tokenizer`. ([#69](https://github.com/jpreagan/llmnop/pull/69))
