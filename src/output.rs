@@ -261,7 +261,7 @@ pub fn print_summary_to_stdout(
     let total_stats = compute_stats(&total_tokens_vec);
 
     let mut table = Table::new();
-    table.load_preset(UTF8_FULL_CONDENSED);
+    table.load_style(UTF8_FULL_CONDENSED);
     table.set_content_arrangement(ContentArrangement::Dynamic);
     table.set_header(vec![
         Cell::new("Metric").add_attribute(Attribute::Bold),
