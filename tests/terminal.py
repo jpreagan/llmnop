@@ -24,7 +24,7 @@ import unittest
 
 BINARY = Path(sys.argv.pop(1) if len(sys.argv) > 1 else "target/debug/llmnop").resolve()
 CSI = re.compile(r"\x1b\[([0-9;?]*)([A-Za-z])")
-Run = collections.namedtuple("Run", "returncode screen stdout results")
+Run = collections.namedtuple("Run", "returncode screen stdout results tty")
 
 
 class Screen:
@@ -92,6 +92,9 @@ class Endpoint(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         self.rfile.read(int(self.headers["Content-Length"]))
+        with self.server.request_lock:
+            delay = next(self.server.request_delays, 0.4)
+            self.server.requests_started += 1
         if self.path.endswith("chat/completions"):
             delta = {"choices": [{"index": 0, "delta": {"content": "hello"}}]}
             done = "[DONE]"
@@ -110,7 +113,7 @@ class Endpoint(http.server.BaseHTTPRequestHandler):
         try:
             self.wfile.write(chunks[0])
             self.wfile.flush()
-            time.sleep(0.4)
+            time.sleep(delay)
             self.wfile.write(chunks[1])
         except (BrokenPipeError, ConnectionResetError):
             pass
@@ -120,6 +123,7 @@ class TerminalTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Endpoint)
+        cls.server.request_lock = threading.Lock()
         cls.server_thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.server_thread.start()
 
@@ -130,8 +134,12 @@ class TerminalTests(unittest.TestCase):
         cls.server_thread.join()
 
     def run_cli(self, api="responses", fmt="json", mixed=True, width=120, height=35,
-                interrupt=False, no_color=False):
+                interrupt=False, no_color=False, requests=2, warmup=0, delays=(),
+                interrupt_after=None):
         """Run one benchmark on a PTY and check what every run must leave behind."""
+        with self.server.request_lock:
+            self.server.request_delays = iter(delays)
+            self.server.requests_started = 0
         directory = tempfile.TemporaryDirectory(prefix="llmnop-terminal-")
         self.addCleanup(directory.cleanup)
         root = Path(directory.name)
@@ -159,7 +167,8 @@ class TerminalTests(unittest.TestCase):
             env["NO_COLOR"] = "1"
         command = [str(BINARY), "--api", api, "--url", f"http://127.0.0.1:{self.server.server_port}/v1",
                    "--model", "test", "--tokenizer", str(tokenizer), "--input-tokens", "2",
-                   "--output-cap", "16", "--requests", "2", "--format", fmt,
+                   "--output-cap", "16", "--requests", str(requests), "--warmup", str(warmup),
+                   "--format", fmt,
                    "--results-dir", str(root / "results")]
         process = subprocess.Popen(command, stdin=slave, stdout=subprocess.PIPE if mixed else slave,
                                    stderr=slave, preexec_fn=setup, env=env)
@@ -191,7 +200,11 @@ class TerminalTests(unittest.TestCase):
             except termios.error:
                 pass
             read_ready(0.005)
-            if interrupt and not sent and time.monotonic() - started > 0.2:
+            interrupt_now = interrupt and time.monotonic() - started > 0.2
+            if interrupt_after is not None:
+                with self.server.request_lock:
+                    interrupt_now = self.server.requests_started >= interrupt_after
+            if interrupt_now and not sent:
                 os.write(master, b"\x03")
                 sent = True
             if time.monotonic() - started > 15:
@@ -209,7 +222,7 @@ class TerminalTests(unittest.TestCase):
         self.assertIn("previous output", text, "existing terminal output was erased")
         for border in "╭╮╰╯│":
             self.assertNotIn(border, text, "viewport rows were left behind")
-        return Run(process.returncode, text, stdout, root / "results")
+        return Run(process.returncode, text, stdout, root / "results", tty)
 
     def assert_completed(self, run):
         self.assertEqual(run.returncode, 0, run.screen)
@@ -247,6 +260,33 @@ class TerminalTests(unittest.TestCase):
         run = self.run_cli(fmt="table", mixed=False, no_color=True)
         self.assert_completed(run)
         self.assert_report(run, colored=False)
+
+    def test_immediate_completions_are_batched_and_flushed(self):
+        requests, warmup = 32, 4
+        run = self.run_cli(fmt="table", mixed=False, height=6, requests=requests, warmup=warmup,
+                           delays=[0] * (requests + warmup))
+        self.assertEqual(run.returncode, 0, run.screen)
+        records = [json.loads(line) for line in next(run.results.glob("*/requests.jsonl")).read_text().splitlines()]
+        trails = re.findall(r"✓ (warmup )?#(\d+)", run.screen)
+        self.assertEqual([(bool(phase), int(request_id)) for phase, request_id in trails],
+                         [(record["phase"] == "warmup", record["request_id"]) for record in records])
+        self.assertEqual(sorted(int(request_id) for _, request_id in trails), list(range(requests + warmup)))
+        batches = re.split(r"\x1b\[[0-9;?]*J", run.tty.decode())
+        self.assertGreater(max(batch.count("✓") for batch in batches), 1,
+                           "each completion cleared the dashboard instead of batching trail lines")
+        self.assertLess(run.screen.rindex("✓"), run.screen.index("llmnop "))
+
+    def test_interrupt_flushes_pending_trails_before_report(self):
+        run = self.run_cli(fmt="table", mixed=False, height=6, requests=8,
+                           delays=[0, 0, 0, 0.4], interrupt_after=4)
+        self.assertEqual(run.returncode, 130, run.screen)
+        self.assertEqual(sorted(re.findall(r"✓ #(\d+)", run.screen)), ["0", "1", "2"])
+        self.assertEqual(re.findall(r"– #(\d+)", run.screen), ["3"])
+        records = [json.loads(line) for line in next(run.results.glob("*/requests.jsonl")).read_text().splitlines()]
+        self.assertEqual([int(request_id) for request_id in re.findall(r"[✓–] #(\d+)", run.screen)],
+                         [record["request_id"] for record in records])
+        self.assertLess(max(run.screen.rindex("✓"), run.screen.rindex("– #3")),
+                        run.screen.index("llmnop "))
 
     def test_startup_interrupt_is_preserved(self):
         run = self.run_cli(interrupt=True)

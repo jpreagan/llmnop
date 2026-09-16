@@ -62,17 +62,23 @@ impl<W: Write> Inline<W> {
         self.terminal.backend_mut().flush()
     }
 
-    pub fn insert_before(&mut self, line: Line<'_>) -> io::Result<()> {
+    pub fn insert_before(&mut self, lines: &[Line<'_>]) -> io::Result<()> {
+        if lines.is_empty() {
+            return Ok(());
+        }
         self.resize()?;
         self.terminal.clear()?;
         let empty = Buffer::empty(Rect::new(0, 0, self.size().width, 1));
         let mut buffer = empty.clone();
-        line.render(buffer.area, &mut buffer);
         let backend = self.terminal.backend_mut();
-        backend.draw(empty.diff(&buffer).into_iter())?;
-        backend.writer.write_all(b"\r\n")?;
-        // The trail now precedes the viewport. Re-anchor at the following line.
-        backend.cursor = Position::ORIGIN;
+        for line in lines {
+            buffer.reset();
+            line.render(buffer.area, &mut buffer);
+            backend.draw(empty.diff(&buffer).into_iter())?;
+            backend.writer.write_all(b"\r\n")?;
+            // Each trail advances the viewport origin to the following line.
+            backend.cursor = Position::ORIGIN;
+        }
         backend.append_lines(backend.size.height - 1)?;
         backend.flush()
     }
