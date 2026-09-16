@@ -1,7 +1,6 @@
 use crate::args::Args;
 use crate::benchmark::{Metrics, Phase, RequestRecord, Status, unix_time_ns};
 use anyhow::{Context, Result};
-use comfy_table::{Table, presets::UTF8_FULL_CONDENSED};
 use directories::ProjectDirs;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -214,60 +213,6 @@ impl<'a> BenchmarkSummary<'a> {
             errors,
         }
     }
-
-    pub fn table(&self) -> String {
-        let mut table = Table::new();
-        table.load_style(UTF8_FULL_CONDENSED);
-        table.set_header(["Metric", "Samples", "Mean", "Median", "P95", "P99"]);
-        for (key, label) in [
-            ("request_latency_ms", "Request latency (ms)"),
-            ("ttft_ms", "Time to first token (ms)"),
-            ("ttfo_ms", "Time to first content (ms)"),
-            ("generation_tokens_per_second", "Generation rate (tokens/s)"),
-            (
-                "mean_inter_token_latency_ms",
-                "Estimated inter-token latency (ms)",
-            ),
-            ("mean_inter_event_latency_ms", "Mean stream-event gap (ms)"),
-            (
-                "max_inter_event_latency_ms",
-                "Longest stream-event gap (ms)",
-            ),
-            ("input_tokens", "Input tokens"),
-            ("content_tokens", "Content tokens"),
-            ("reasoning_tokens", "Exposed reasoning tokens"),
-            ("generated_tokens", "Generated tokens"),
-        ] {
-            let m = &self.metrics[key];
-            table.add_row(vec![
-                label.to_string(),
-                m.count.to_string(),
-                display(m.mean),
-                display(m.p50),
-                display(m.p95),
-                display(m.p99),
-            ]);
-        }
-        format!(
-            "{table}\n\nCompleted: {} / {}  Failed: {}  Timed out: {}  Cancelled: {}\nOutput-limit completions: {}  Empty completions: {}\nDuration: {} ms  Completed requests/s: {}  Generated tokens/s: {}\n",
-            self.measurement.completed,
-            self.measurement.started,
-            self.measurement.failed,
-            self.measurement.timed_out,
-            self.measurement.cancelled,
-            self.measurement.completed_at_output_limit,
-            self.measurement.completed_with_no_text,
-            display(self.measurement_duration_ms),
-            display(self.completed_requests_per_second),
-            display(self.completed_generated_tokens_per_second)
-        )
-    }
-}
-
-fn display(value: Option<f64>) -> String {
-    value
-        .map(|v| format!("{v:.2}"))
-        .unwrap_or_else(|| "—".to_string())
 }
 
 pub struct ResultsWriter {
