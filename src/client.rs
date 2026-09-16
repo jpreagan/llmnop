@@ -96,6 +96,12 @@ pub struct Event<'a> {
     pub failure: Option<Failure>,
 }
 
+impl Event<'_> {
+    pub fn has_text(&self) -> bool {
+        !self.content.is_empty() || !self.reasoning.is_empty()
+    }
+}
+
 fn text<'a>(value: &'a Value, pointer: &str) -> &'a str {
     value.pointer(pointer).and_then(Value::as_str).unwrap_or("")
 }

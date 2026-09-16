@@ -10,12 +10,12 @@ mod style;
 #[cfg(test)]
 mod tests;
 mod tokens;
+mod ui;
 
 use anyhow::{Context, Result};
 use args::{Args, Command, OutputFormat};
 use benchmark::{Phase, PreparedRequest, RequestRecord};
 use clap::Parser;
-use indicatif::{ProgressBar, ProgressStyle};
 use output::{BenchmarkSummary, ResultsWriter};
 use prompt::PromptGenerator;
 use std::collections::VecDeque;
@@ -24,8 +24,11 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
 use tokenizers::Tokenizer;
-use tokio::sync::watch;
+use tokio::sync::{mpsc, watch};
 use tokio::task::JoinSet;
+use ui::{Stage, Ui};
+
+const INTERRUPTED: u8 = 130;
 
 fn prepare(
     args: &Args,
@@ -80,30 +83,32 @@ async fn run_phase(
     mut requests: VecDeque<PreparedRequest>,
     cancel: &watch::Receiver<bool>,
     writer: &mut ResultsWriter,
+    ui: &mut Ui,
 ) -> Result<Vec<RequestRecord>> {
-    let pb = if !io::stderr().is_terminal() {
-        ProgressBar::hidden()
-    } else {
-        ProgressBar::new(requests.len() as u64)
-    };
-    pb.set_style(ProgressStyle::with_template(
-        "{spinner} [{elapsed_precise}] {pos}/{len}",
-    )?);
+    let phase = requests.front().map(|r| r.phase);
     let mut in_flight = JoinSet::new();
     let mut processing = JoinSet::new();
     let mut records = Vec::with_capacity(requests.len());
     let timeout = Duration::from_secs_f64(args.request_timeout);
+    let (progress, mut deltas) = mpsc::unbounded_channel();
+    let progress = ui.interactive().then_some(progress);
+    let mut tick = ui::frames();
+    if let Some(phase) = phase {
+        ui.begin(Stage::Run(phase), requests.len());
+    }
     loop {
         while !*cancel.borrow() && in_flight.len() < args.concurrency as usize {
             let Some(request) = requests.pop_front() else {
                 break;
             };
+            ui.started(request.id, request.output_cap);
             in_flight.spawn(benchmark::capture(
                 client.clone(),
                 args.api,
                 request,
                 timeout,
                 cancel.clone(),
+                progress.clone(),
             ));
         }
         if in_flight.is_empty() && processing.is_empty() {
@@ -118,18 +123,27 @@ async fn run_phase(
             Some(record) = processing.join_next(), if !processing.is_empty() => {
                 let record = record.context("token accounting task failed")?;
                 writer.append(&record).await?;
-                if let Some(error) = &record.error { if pb.is_hidden() { eprintln!("Request {}: {}", record.request_id, error.message); } else { pb.println(format!("Request {}: {}", record.request_id, error.message)); } }
+                ui.finished(&record);
                 records.push(record);
-                pb.inc(1);
+            }
+            Some(delta) = deltas.recv(), if progress.is_some() => ui.delta(delta),
+            _ = tick.tick() => {
+                ui.tokenize(tokenizer);
+                ui.draw();
             }
         }
     }
-    pb.finish_and_clear();
     Ok(records)
 }
 
-#[tokio::main]
-async fn main() -> Result<ExitCode> {
+fn main() -> Result<ExitCode> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let code = runtime.block_on(run());
+    runtime.shutdown_background();
+    code
+}
+
+async fn run() -> Result<ExitCode> {
     let mut args = Args::parse();
     if let Some(Command::Update) = args.command {
         #[cfg(feature = "self-update")]
@@ -147,21 +161,64 @@ async fn main() -> Result<ExitCode> {
         .tokenizer
         .get_or_insert_with(|| args.model.clone().unwrap())
         .clone();
-    let tokenizer = Arc::new(tokens::load(&tokenizer_name)?);
-    let client = client::http_client()?;
-    let generator = PromptGenerator::new(&tokenizer)?;
-    let warmup = prepare(&args, &client, &tokenizer, &generator, Phase::Warmup)?;
-    let measured = prepare(&args, &client, &tokenizer, &generator, Phase::Measurement)?;
-    drop(generator);
-    let mut writer = ResultsWriter::new(args.results_dir.as_deref()).await?;
     let (cancel_tx, cancel) = watch::channel(false);
     let signals = tokio::spawn(async move {
         if tokio::signal::ctrl_c().await.is_ok() {
             let _ = cancel_tx.send(true);
         }
     });
-    let mut records = run_phase(&args, &client, &tokenizer, warmup, &cancel, &mut writer).await?;
-    records.extend(run_phase(&args, &client, &tokenizer, measured, &cancel, &mut writer).await?);
+    let mut ui = Ui::new(&args, cancel.clone());
+    let Some(tokenizer) = ui
+        .attend(Stage::Tokenizer, 0, move || tokens::load(&tokenizer_name))
+        .await
+    else {
+        return Ok(ExitCode::from(INTERRUPTED));
+    };
+    let tokenizer = Arc::new(tokenizer?);
+    let client = client::http_client()?;
+    let args = Arc::new(args);
+    let prepared = {
+        let (args, client, tokenizer) = (Arc::clone(&args), client.clone(), Arc::clone(&tokenizer));
+        ui.attend(
+            Stage::Prompts,
+            (args.warmup + args.requests) as usize,
+            move || {
+                let generator = PromptGenerator::new(&tokenizer)?;
+                let warmup = prepare(&args, &client, &tokenizer, &generator, Phase::Warmup)?;
+                let measured = prepare(&args, &client, &tokenizer, &generator, Phase::Measurement)?;
+                anyhow::Ok((warmup, measured))
+            },
+        )
+        .await
+    };
+    let Some(prepared) = prepared else {
+        return Ok(ExitCode::from(INTERRUPTED));
+    };
+    let (warmup, measured) = prepared?;
+    let mut writer = ResultsWriter::new(args.results_dir.as_deref()).await?;
+    let mut records = run_phase(
+        &args,
+        &client,
+        &tokenizer,
+        warmup,
+        &cancel,
+        &mut writer,
+        &mut ui,
+    )
+    .await?;
+    records.extend(
+        run_phase(
+            &args,
+            &client,
+            &tokenizer,
+            measured,
+            &cancel,
+            &mut writer,
+            &mut ui,
+        )
+        .await?,
+    );
+    drop(ui);
     let interrupted = *cancel.borrow();
     signals.abort();
     let summary = BenchmarkSummary::new(&args, writer.run_id.clone(), &records, interrupted);
@@ -185,7 +242,7 @@ async fn main() -> Result<ExitCode> {
     }
     let failed = summary.measurement.unsuccessful() + summary.warmup.unsuccessful() > 0;
     Ok(if interrupted {
-        ExitCode::from(130)
+        ExitCode::from(INTERRUPTED)
     } else if failed {
         ExitCode::FAILURE
     } else {

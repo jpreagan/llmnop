@@ -9,7 +9,14 @@ use serde_json::Value;
 use std::sync::LazyLock;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokenizers::Tokenizer;
-use tokio::sync::watch;
+use tokio::sync::{mpsc, watch};
+
+pub struct Delta {
+    pub id: u32,
+    pub content: String,
+    pub reasoning: String,
+    pub at: Instant,
+}
 
 pub fn unix_time_ns() -> u64 {
     SystemTime::now()
@@ -86,6 +93,15 @@ pub struct RequestRecord {
     pub end: Instant,
 }
 
+impl RequestRecord {
+    pub fn stopped_at_output_cap(&self) -> bool {
+        matches!(
+            self.finish_reason.as_deref(),
+            Some("length" | "max_tokens" | "max_output_tokens")
+        )
+    }
+}
+
 #[derive(Default)]
 struct Observation {
     content: String,
@@ -116,9 +132,18 @@ fn merge_usage(target: &mut Value, update: &Value) {
     }
 }
 
+pub fn seconds_per_token(window: Duration, generated: u64) -> Option<f64> {
+    let seconds = window.as_secs_f64();
+    if seconds > 0.0 && generated > 1 {
+        Some(seconds / (generated - 1) as f64)
+    } else {
+        None
+    }
+}
+
 impl Observation {
     fn accept(&mut self, event: &Event<'_>, now: Instant) {
-        if !event.content.is_empty() || !event.reasoning.is_empty() {
+        if event.has_text() {
             self.first.get_or_insert(now);
             if let Some(previous) = self.last {
                 self.max_gap = self.max_gap.max(now.duration_since(previous));
@@ -156,15 +181,11 @@ impl Observation {
         content: Option<u64>,
         reasoning: Option<u64>,
     ) -> Metrics {
-        let window = self
-            .first
-            .zip(self.last)
-            .map(|(a, b)| b.duration_since(a).as_secs_f64());
+        let window = self.first.zip(self.last).map(|(a, b)| b.duration_since(a));
         let generated = content.zip(reasoning).map(|(a, b)| a + b);
         let per_token = window
             .zip(generated)
-            .filter(|(seconds, n)| *seconds > 0.0 && *n > 1)
-            .map(|(seconds, n)| seconds / (n - 1) as f64);
+            .and_then(|(window, n)| seconds_per_token(window, n));
         Metrics {
             request_latency_ms: completed.then(|| end.duration_since(start).as_secs_f64() * 1000.0),
             ttft_ms: self
@@ -173,12 +194,12 @@ impl Observation {
             ttfo_ms: self
                 .first_content
                 .map(|t| t.duration_since(start).as_secs_f64() * 1000.0),
-            generation_window_ms: window.map(|s| s * 1000.0),
+            generation_window_ms: window.map(|w| w.as_secs_f64() * 1000.0),
             generation_tokens_per_second: per_token.map(|s| 1.0 / s),
             mean_inter_token_latency_ms: per_token.map(|s| s * 1000.0),
             mean_inter_event_latency_ms: window
                 .filter(|_| self.events > 1)
-                .map(|s| s * 1000.0 / (self.events - 1) as f64),
+                .map(|w| w.as_secs_f64() * 1000.0 / (self.events - 1) as f64),
             max_inter_event_latency_ms: (self.events > 1)
                 .then_some(self.max_gap.as_secs_f64() * 1000.0),
             input_tokens: input,
@@ -224,6 +245,8 @@ async fn receive(
     api: ApiType,
     request: Request,
     observation: &mut Observation,
+    id: u32,
+    progress: Option<&mpsc::UnboundedSender<Delta>>,
 ) -> Result<(), Failure> {
     let response = client
         .execute(request)
@@ -273,6 +296,14 @@ async fn receive(
             serde_json::from_str(&event.data).map_err(|e| Failure::new("protocol", e))?;
         let event = client::parse_event(api, &value)?;
         observation.accept(&event, now);
+        if let Some(progress) = progress.filter(|_| event.has_text()) {
+            let _ = progress.send(Delta {
+                id,
+                content: event.content.to_owned(),
+                reasoning: event.reasoning.to_owned(),
+                at: now,
+            });
+        }
         if let Some(failure) = event.failure {
             return Err(failure);
         }
@@ -292,6 +323,7 @@ pub async fn capture(
     prepared: PreparedRequest,
     timeout: Duration,
     mut cancel: watch::Receiver<bool>,
+    progress: Option<mpsc::UnboundedSender<Delta>>,
 ) -> Captured {
     let (origin, unix_ns) = *CLOCK;
     let start = Instant::now();
@@ -302,7 +334,7 @@ pub async fn capture(
     let (status, error) = tokio::select! {
         biased;
         _ = cancel.wait_for(|cancelled| *cancelled) => (Status::Cancelled, Some(Failure::new("cancelled", "interrupted"))),
-        result = tokio::time::timeout(timeout, receive(&client, api, prepared.request, &mut observation)) => match result {
+        result = tokio::time::timeout(timeout, receive(&client, api, prepared.request, &mut observation, prepared.id, progress.as_ref())) => match result {
             Ok(Ok(())) => (Status::Completed, None),
             Ok(Err(error)) => (Status::Failed, Some(error)),
             Err(_) => (Status::TimedOut, Some(Failure::new("timeout", "request deadline exceeded"))),

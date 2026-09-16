@@ -2,8 +2,10 @@ use super::*;
 use crate::benchmark::Status;
 use serde_json::{Value, json};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Instant;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
+use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 struct Reply {
@@ -169,6 +171,7 @@ async fn all_three_wire_formats_preserve_local_counts_and_provider_usage() {
             requests.pop_front().unwrap(),
             Duration::from_secs(2),
             rx,
+            None,
         )
         .await
         .finish(&tokens::test_tokenizer());
@@ -219,6 +222,7 @@ async fn timeout_and_cancellation_preserve_partial_output() {
             prepared(&client, args::ApiType::Chat, &url, 0),
             Duration::from_millis(if cancel { 2000 } else { 70 }),
             rx,
+            None,
         ));
         if cancel {
             tokio::time::sleep(Duration::from_millis(70)).await;
@@ -252,6 +256,7 @@ async fn timeout_before_output_has_missing_first_token_time() {
         prepared(&client, args::ApiType::Chat, &url, 0),
         Duration::from_millis(30),
         rx,
+        None,
     )
     .await
     .finish(&tokens::test_tokenizer());
@@ -277,6 +282,7 @@ async fn truncated_and_malformed_streams_are_failures_even_after_text() {
             prepared(&client, args::ApiType::Chat, &url, 0),
             Duration::from_secs(2),
             rx,
+            None,
         )
         .await
         .finish(&tokens::test_tokenizer());
@@ -308,6 +314,7 @@ async fn sse_handles_fragmented_utf8_crlf_comments_and_multiline_data() {
         prepared(&client, args::ApiType::Chat, &url, 0),
         Duration::from_secs(2),
         rx,
+        None,
     )
     .await
     .finish(&tokens::test_tokenizer());
@@ -334,6 +341,7 @@ async fn empty_and_tool_only_completions_have_no_text_timings() {
             prepared(&client, args::ApiType::Chat, &url, 0),
             Duration::from_secs(2),
             rx,
+            None,
         )
         .await
         .finish(&tokens::test_tokenizer());
@@ -375,11 +383,20 @@ async fn scheduler_bounds_concurrency_counts_failures_and_exports_recomputable_r
         .map(|i| prepared(&client, args::ApiType::Chat, &url, i))
         .collect();
     let (_tx, rx) = watch::channel(false);
+    let mut ui = Ui::new(&args, rx.clone());
     let parent = std::env::temp_dir().join(format!("llmnop-test-{}", benchmark::unix_time_ns()));
     let mut writer = ResultsWriter::new(Some(&parent)).await.unwrap();
-    let mut records = run_phase(&args, &client, &tokenizer, requests, &rx, &mut writer)
-        .await
-        .unwrap();
+    let mut records = run_phase(
+        &args,
+        &client,
+        &tokenizer,
+        requests,
+        &rx,
+        &mut writer,
+        &mut ui,
+    )
+    .await
+    .unwrap();
     assert_eq!(records.len(), 5);
     assert_eq!(peak.load(Ordering::SeqCst), 2);
     assert_eq!(
@@ -470,6 +487,7 @@ async fn streamed_refusals_count_as_visible_content() {
             prepared(&client, api, &url, 0),
             Duration::from_secs(2),
             rx,
+            None,
         )
         .await
         .finish(&tokens::test_tokenizer());
@@ -507,6 +525,7 @@ async fn warmup_finishes_before_measurement_and_deadlines_free_slots() {
     let client = client::http_client().unwrap();
     let tokenizer = Arc::new(tokens::test_tokenizer());
     let (_tx, rx) = watch::channel(false);
+    let mut ui = Ui::new(&args, rx.clone());
     let parent = std::env::temp_dir().join(format!("llmnop-phases-{}", benchmark::unix_time_ns()));
     let mut writer = ResultsWriter::new(Some(&parent)).await.unwrap();
     let warmup = (0..2)
@@ -516,9 +535,17 @@ async fn warmup_finishes_before_measurement_and_deadlines_free_slots() {
             r
         })
         .collect();
-    let warmup = run_phase(&args, &client, &tokenizer, warmup, &rx, &mut writer)
-        .await
-        .unwrap();
+    let warmup = run_phase(
+        &args,
+        &client,
+        &tokenizer,
+        warmup,
+        &rx,
+        &mut writer,
+        &mut ui,
+    )
+    .await
+    .unwrap();
     assert!(
         warmup
             .iter()
@@ -527,9 +554,17 @@ async fn warmup_finishes_before_measurement_and_deadlines_free_slots() {
     let measured = (2..4)
         .map(|i| prepared(&client, args::ApiType::Chat, &url, i))
         .collect();
-    let measured = run_phase(&args, &client, &tokenizer, measured, &rx, &mut writer)
-        .await
-        .unwrap();
+    let measured = run_phase(
+        &args,
+        &client,
+        &tokenizer,
+        measured,
+        &rx,
+        &mut writer,
+        &mut ui,
+    )
+    .await
+    .unwrap();
     assert_eq!(measured.len(), 2);
     assert!(
         warmup.iter().map(|r| r.end).max().unwrap()
@@ -552,4 +587,36 @@ async fn warmup_finishes_before_measurement_and_deadlines_free_slots() {
     assert_eq!(exported.lines().count(), 4);
     assert_eq!(finish_server(task).await.len(), 4);
     tokio::fs::remove_dir_all(parent).await.unwrap();
+}
+
+#[tokio::test]
+async fn capture_streams_each_text_delta_as_it_arrives() {
+    let payload = "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"a\"}}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"\"}}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"b c\"}}]}\n\ndata: [DONE]\n\n";
+    let (url, task, _) = server(vec![Reply::sse(payload)]).await;
+    let client = client::http_client().unwrap();
+    let (_tx, rx) = watch::channel(false);
+    let (progress, mut deltas) = mpsc::unbounded_channel();
+    let started = Instant::now();
+    let r = benchmark::capture(
+        client.clone(),
+        args::ApiType::Chat,
+        prepared(&client, args::ApiType::Chat, &url, 7),
+        Duration::from_secs(2),
+        rx,
+        Some(progress),
+    )
+    .await
+    .finish(&tokens::test_tokenizer());
+    assert_eq!(r.status, Status::Completed);
+    let mut received = Vec::new();
+    while let Ok(delta) = deltas.try_recv() {
+        assert_eq!(delta.id, 7);
+        assert!(delta.at >= started && delta.at <= r.end);
+        received.push((delta.reasoning, delta.content));
+    }
+    assert_eq!(
+        received,
+        vec![("a".into(), String::new()), (String::new(), "b c".into())]
+    );
+    finish_server(task).await;
 }

@@ -12,7 +12,7 @@ const LABEL_WIDTH: usize = 12;
 
 type Metric = (&'static str, &'static str, usize);
 
-fn endpoint(args: &Args) -> Vec<Span<'static>> {
+pub fn endpoint(args: &Args) -> Vec<Span<'static>> {
     vec![
         args.model.clone().unwrap_or_default().bold(),
         " · ".dim(),
@@ -22,7 +22,7 @@ fn endpoint(args: &Args) -> Vec<Span<'static>> {
     ]
 }
 
-fn workload(args: &Args) -> String {
+pub fn workload(args: &Args) -> String {
     let mut line = format!("{} input tokens", args.input_tokens);
     if args.input_tokens_stddev > 0 {
         line.push_str(&format!(" ±{}", args.input_tokens_stddev));

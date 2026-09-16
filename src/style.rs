@@ -19,7 +19,6 @@ pub fn seconds(ms: f64) -> String {
     }
 }
 
-/// Inserts thousands separators into a whole number.
 pub fn group(n: impl Display) -> String {
     let digits = n.to_string();
     let mut out = String::with_capacity(digits.len() + digits.len() / 3);
@@ -32,7 +31,6 @@ pub fn group(n: impl Display) -> String {
     out
 }
 
-/// ratatui 0.29 has no public conversion from its styles to crossterm's.
 pub fn content_style(style: Style) -> ContentStyle {
     let mut content = ContentStyle {
         foreground_color: style.fg.map(Into::into),
