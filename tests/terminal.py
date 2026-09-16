@@ -94,7 +94,16 @@ class Endpoint(http.server.BaseHTTPRequestHandler):
         self.rfile.read(int(self.headers["Content-Length"]))
         with self.server.request_lock:
             delay = next(self.server.request_delays, 0.4)
+            error = next(self.server.request_errors, None)
             self.server.requests_started += 1
+        if error is not None:
+            body = error.encode()
+            self.send_response(400)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path.endswith("chat/completions"):
             delta = {"choices": [{"index": 0, "delta": {"content": "hello"}}]}
             done = "[DONE]"
@@ -135,10 +144,11 @@ class TerminalTests(unittest.TestCase):
 
     def run_cli(self, api="responses", fmt="json", mixed=True, width=120, height=35,
                 interrupt=False, no_color=False, requests=2, warmup=0, delays=(),
-                interrupt_after=None):
+                interrupt_after=None, errors=(), term="xterm-256color"):
         """Run one benchmark on a PTY and check what every run must leave behind."""
         with self.server.request_lock:
             self.server.request_delays = iter(delays)
+            self.server.request_errors = iter(errors)
             self.server.requests_started = 0
         directory = tempfile.TemporaryDirectory(prefix="llmnop-terminal-")
         self.addCleanup(directory.cleanup)
@@ -161,7 +171,11 @@ class TerminalTests(unittest.TestCase):
             os.setsid()
             fcntl.ioctl(0, termios.TIOCSCTTY, 0)
 
-        env = dict(os.environ, TERM="xterm-256color")
+        env = dict(os.environ)
+        if term is None:
+            env.pop("TERM", None)
+        else:
+            env["TERM"] = term
         env.pop("NO_COLOR", None)
         if no_color:
             env["NO_COLOR"] = "1"
@@ -260,6 +274,40 @@ class TerminalTests(unittest.TestCase):
         run = self.run_cli(fmt="table", mixed=False, no_color=True)
         self.assert_completed(run)
         self.assert_report(run, colored=False)
+
+    def test_full_failure_diagnostics_survive_wrapping_and_cleanup(self):
+        diagnostic = "Invalid configuration. " + " ".join(
+            f"Diagnostic {index}: 測定 requires a supported parameter value."
+            for index in range(32)
+        ) + " Remove unsupported parameter: " + "setting_" * 16 + "."
+        for width, height in ((80, 20), (32, 6)):
+            with self.subTest(size=(width, height)):
+                self.assertGreater(len(diagnostic), width * height)
+                run = self.run_cli(width=width, height=height, errors=[diagnostic], delays=[0, 0])
+                self.assertEqual(run.returncode, 1, run.screen)
+                self.assertIn("✗ #0", run.screen)
+                self.assertIn("✓ #1", run.screen)
+                visible = "".join(run.screen.split())
+                expected = "".join(diagnostic.split())
+                self.assertIn(expected, visible, "part of the error diagnostic was lost")
+                self.assertLessEqual(visible.index(expected) + len(expected), visible.index("✓#1"))
+                self.assertLess(visible.index("✓#1"), visible.index("Results:"))
+                summary = json.loads(run.stdout)
+                saved = json.loads(next(run.results.glob("*/summary.json")).read_text())
+                self.assertEqual(summary, saved)
+
+    def test_unsupported_terminals_use_plain_progress(self):
+        for term in ("dumb", None):
+            with self.subTest(term=term):
+                run = self.run_cli(term=term)
+                self.assert_completed(run)
+                self.assertFalse(b"\x1b" in run.tty, "plain progress emitted terminal controls")
+                self.assertIn("Loading tokenizer", run.screen)
+                self.assertIn("Generating 2 prompts", run.screen)
+                self.assertIn("Measuring: 2 requests", run.screen)
+                summary = json.loads(run.stdout)
+                saved = json.loads(next(run.results.glob("*/summary.json")).read_text())
+                self.assertEqual(summary, saved)
 
     def test_immediate_completions_are_batched_and_flushed(self):
         requests, warmup = 32, 4

@@ -124,8 +124,10 @@ impl Ui {
             bucket_at: Instant::now(),
         };
         let flight_rows = args.concurrency.min(MAX_FLIGHT_ROWS.into()) as u16;
-        let terminal = io::stderr()
-            .is_terminal()
+        let supports_dashboard = std::env::var_os("TERM")
+            .map(|term| !term.is_empty() && term != "dumb")
+            .unwrap_or(cfg!(windows));
+        let terminal = (io::stderr().is_terminal() && supports_dashboard)
             .then(|| Inline::new(BufWriter::new(io::stderr()), FIXED_ROWS + flight_rows))
             .and_then(Result::ok);
         Self {
