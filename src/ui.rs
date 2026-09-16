@@ -207,7 +207,14 @@ impl Ui {
 
     pub fn finished(&mut self, record: &RequestRecord) {
         let state = &mut self.state;
-        state.live.remove(&record.request_id);
+        if let Some(live) = state.live.remove(&record.request_id) {
+            if let Some(generated) = record.metrics.generated_tokens {
+                // Final counts include text whose deltas have not reached the UI yet.
+                let remaining = generated.saturating_sub(live.content + live.reasoning);
+                state.advance(Instant::now());
+                *state.buckets.back_mut().unwrap() += remaining;
+            }
+        }
         state.tally.add(record);
         if record.status == Status::Completed {
             let m = &record.metrics;
@@ -627,6 +634,7 @@ fn seconds_of(d: Duration) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::benchmark::Metrics;
 
     fn state(requests: u32) -> State {
         let now = Instant::now();
@@ -656,6 +664,101 @@ mod tests {
                     .collect()
             })
             .collect()
+    }
+
+    fn live_ui() -> Ui {
+        Ui {
+            terminal: None,
+            state: state(1),
+            trails: Vec::new(),
+        }
+    }
+
+    fn record(status: Status, generated_tokens: Option<u64>) -> RequestRecord {
+        let now = Instant::now();
+        RequestRecord {
+            request_id: 0,
+            phase: Phase::Measurement,
+            start_time_unix_ns: 0,
+            end_time_unix_ns: 0,
+            elapsed_ms: 0.0,
+            status,
+            http_status: Some(200),
+            finish_reason: None,
+            input_target_tokens: 1,
+            output_cap: Some(32),
+            metrics: Metrics {
+                generated_tokens,
+                ..Metrics::default()
+            },
+            reasoning_kinds: Vec::new(),
+            provider_usage: None,
+            error: None,
+            start: now,
+            end: now,
+        }
+    }
+
+    fn delta(content: &str, reasoning: &str) -> Delta {
+        Delta {
+            id: 0,
+            content: content.into(),
+            reasoning: reasoning.into(),
+            at: Instant::now(),
+        }
+    }
+
+    #[test]
+    fn finished_requests_count_pending_and_queued_text_once() {
+        for status in [
+            Status::Completed,
+            Status::Failed,
+            Status::TimedOut,
+            Status::Cancelled,
+        ] {
+            for queued in [false, true] {
+                let mut ui = live_ui();
+                ui.delta(delta("", "a"));
+                if !queued {
+                    ui.delta(delta("b c", ""));
+                }
+                ui.finished(&record(status, Some(3)));
+                assert_eq!(ui.state.buckets.iter().sum::<u64>(), 3);
+                if queued {
+                    ui.delta(delta("b c", ""));
+                }
+                ui.tokenize(&tokens::test_tokenizer());
+                assert_eq!(ui.state.buckets.iter().sum::<u64>(), 3);
+            }
+        }
+    }
+
+    #[test]
+    fn finishing_counts_only_the_remainder_in_the_current_bucket() {
+        let mut ui = live_ui();
+        ui.delta(delta("b", "a"));
+        ui.tokenize(&tokens::test_tokenizer());
+        assert_eq!(ui.state.buckets.iter().sum::<u64>(), 2);
+        ui.delta(delta(" c", ""));
+        ui.state.bucket_at = Instant::now() - Duration::from_secs(1);
+        ui.finished(&record(Status::Completed, Some(3)));
+        assert_eq!(ui.state.buckets, VecDeque::from([2, 1]));
+        ui.tokenize(&tokens::test_tokenizer());
+        assert_eq!(ui.state.buckets, VecDeque::from([2, 1]));
+    }
+
+    #[test]
+    fn missing_or_smaller_final_counts_do_not_add_tokens() {
+        for generated in [None, Some(1)] {
+            let mut ui = live_ui();
+            for content in ["hel", "lo"] {
+                ui.delta(delta(content, ""));
+                ui.tokenize(&tokens::test_tokenizer());
+            }
+            assert_eq!(ui.state.buckets.iter().sum::<u64>(), 2);
+            ui.finished(&record(Status::Completed, generated));
+            assert_eq!(ui.state.buckets.iter().sum::<u64>(), 2);
+        }
     }
 
     #[test]
