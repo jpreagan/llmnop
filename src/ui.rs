@@ -658,16 +658,6 @@ mod tests {
         }
     }
 
-    fn lines(buf: &Buffer) -> Vec<String> {
-        (buf.area.top()..buf.area.bottom())
-            .map(|y| {
-                (buf.area.left()..buf.area.right())
-                    .map(|x| buf[(x, y)].symbol())
-                    .collect()
-            })
-            .collect()
-    }
-
     fn live_ui() -> Ui {
         Ui {
             terminal: None,
@@ -760,106 +750,6 @@ mod tests {
             assert_eq!(ui.state.buckets.iter().sum::<u64>(), 2);
             ui.finished(&record(Status::Completed, generated));
             assert_eq!(ui.state.buckets.iter().sum::<u64>(), 2);
-        }
-    }
-
-    #[test]
-    fn standard_terminal_keeps_complete_stable_headers() {
-        let state = state(1);
-        let area = Rect::new(0, 0, 80, 14);
-        let mut previous = None;
-        for _ in 0..64 {
-            let mut buf = Buffer::empty(area);
-            state.render(area, &mut buf);
-            let header = lines(&buf)
-                .into_iter()
-                .find(|line| line.contains("request"))
-                .unwrap();
-            assert!(header.contains("reasoning"), "{header}");
-            assert!(header.contains("answer"), "{header}");
-            assert!(header.contains("last delta"), "{header}");
-            assert!(!header.contains("of cap"), "{header}");
-            if let Some(previous) = &previous {
-                assert_eq!(&header, previous);
-            }
-            previous = Some(header);
-        }
-    }
-
-    #[test]
-    fn flight_columns_fit_available_width() {
-        let state = state(1);
-        for width in 0..=120 {
-            let area = Rect::new(2, 1, width, 3);
-            let mut buf = Buffer::empty(area);
-            state.render_flight(area, &mut buf);
-            let header = &lines(&buf)[0];
-            for (label, needed) in [
-                ("request", 8),
-                ("elapsed", 18),
-                ("ttft", 27),
-                ("reasoning", 38),
-                ("answer", 48),
-                ("tok/s", 56),
-                ("last delta", 71),
-                ("of cap", 88),
-            ] {
-                if width >= needed {
-                    assert!(header.contains(label), "width {width}: {header}");
-                } else if needed > 8 {
-                    assert!(!header.contains(label), "width {width}: {header}");
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn hidden_count_includes_the_row_reserved_for_its_label() {
-        let state = state(10);
-        let area = Rect::new(2, 1, 116, 9);
-        let mut buf = Buffer::empty(area);
-        state.render_flight(area, &mut buf);
-        let lines = lines(&buf);
-        for id in 0..7 {
-            assert!(lines[id + 1].starts_with(&format!("#{id} ")));
-        }
-        assert_eq!(lines[8].trim(), "… 3 more in flight");
-    }
-
-    #[test]
-    fn every_live_request_is_visible_or_counted_in_the_footer() {
-        for requests in [0, 1, 8, 10, 100] {
-            let state = state(requests);
-            for height in 1..=12 {
-                for width in [20, 76, 116] {
-                    let area = Rect::new(2, 1, width, height);
-                    let mut buf = Buffer::empty(area);
-                    state.render_flight(area, &mut buf);
-                    let lines = lines(&buf);
-                    let visible = lines.iter().filter(|line| line.starts_with('#')).count();
-                    let footer = lines.last().unwrap().trim();
-                    let hidden = footer
-                        .strip_prefix("… ")
-                        .map(|label| {
-                            label
-                                .strip_suffix(" more in flight")
-                                .unwrap()
-                                .parse::<usize>()
-                                .unwrap()
-                        })
-                        .unwrap_or(0);
-                    assert_eq!(
-                        visible + hidden,
-                        requests as usize,
-                        "{requests} requests in {width}x{height}: {lines:?}"
-                    );
-                    if requests < height as u32 {
-                        assert_eq!(hidden, 0);
-                    } else {
-                        assert!(hidden > 0);
-                    }
-                }
-            }
         }
     }
 }

@@ -28,6 +28,11 @@ tokio = { version = "1.53.1", features = ["full"] }
 directories = "6.0.0"
 ratatui = { version = "0.29.0", default-features = false, features = ["crossterm"] }
 
+[target.'cfg(unix)'.dev-dependencies]
+nix = { version = "0.30.1", features = ["fs", "process", "term"] }
+tempfile = "3.27.0"
+vt100 = "0.15.2"
+
 [features]
 self-update = ["dep:axoupdater"]
 

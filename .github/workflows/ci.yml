@@ -27,4 +27,3 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo build
       - run: cargo test
-      - run: python3 tests/terminal.py target/debug/llmnop
