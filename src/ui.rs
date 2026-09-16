@@ -102,6 +102,7 @@ struct State {
 pub struct Ui {
     terminal: Option<Inline<BufWriter<Stderr>>>,
     state: State,
+    trails: Vec<Line<'static>>,
 }
 
 impl Ui {
@@ -127,7 +128,11 @@ impl Ui {
             .is_terminal()
             .then(|| Inline::new(BufWriter::new(io::stderr()), FIXED_ROWS + flight_rows))
             .and_then(Result::ok);
-        Self { terminal, state }
+        Self {
+            terminal,
+            state,
+            trails: Vec::new(),
+        }
     }
 
     pub fn interactive(&self) -> bool {
@@ -211,22 +216,35 @@ impl Ui {
             state.rate.extend(m.generation_tokens_per_second);
         }
         let line = trail(record);
-        match self.terminal.as_mut() {
-            Some(terminal) => {
-                let _ = terminal.insert_before(line);
-            }
-            None => eprintln!("{line}"),
+        if self.interactive() {
+            self.trails.push(line);
+        } else {
+            eprintln!("{line}");
         }
-        self.draw();
     }
 
     pub fn draw(&mut self) {
+        self.flush_trails();
         let Some(terminal) = self.terminal.as_mut() else {
             return;
         };
         self.state.advance(Instant::now());
         let state = &self.state;
         let _ = terminal.draw(|frame| state.render(frame.area(), frame.buffer_mut()));
+    }
+
+    fn flush_trails(&mut self) {
+        if let Some(terminal) = self.terminal.as_mut() {
+            let _ = terminal.insert_before(&self.trails);
+        }
+        self.trails.clear();
+    }
+}
+
+impl Drop for Ui {
+    fn drop(&mut self) {
+        // A phase may finish before the next frame, including when interrupted.
+        self.flush_trails();
     }
 }
 
