@@ -30,7 +30,8 @@ CLI tool for benchmarking streaming LLM inference endpoints.
 - Comments explain why, not what; code should be self-documenting
 - Be conservative with dependencies; vet before adding
 - Tests verify behavior, not implementation
-- Run `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, and `python3 tests/terminal.py target/debug/llmnop` (after `cargo build`) before committing
+- Keep test code and test harnesses in Rust
+- Run `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` before committing
 - For changes to streaming clients, token accounting, metrics, or output, run a benchmark against a real local endpoint when available. Exercise each affected API type; do not claim end-to-end validation when the endpoint was unavailable.
 
 ## Generated Files
