@@ -4,6 +4,7 @@ use clap::error::ErrorKind;
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use serde::Serialize;
 use serde_json::{Map, Value};
+use std::fmt;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -13,6 +14,14 @@ pub enum ApiType {
     Chat,
     Responses,
     Messages,
+}
+
+impl fmt::Display for ApiType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Print the spelling that selects this API on the command line.
+        let value = self.to_possible_value().expect("no API type is skipped");
+        f.write_str(value.get_name())
+    }
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
