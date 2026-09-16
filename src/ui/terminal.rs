@@ -1,13 +1,12 @@
 use crate::style::content_style;
 use ratatui::backend::{Backend, ClearType, WindowSize};
-use ratatui::buffer::{Buffer, Cell};
+use ratatui::buffer::Cell;
 use ratatui::crossterm::cursor::{Hide, MoveDown, MoveToColumn, MoveUp, Show};
 use ratatui::crossterm::queue;
 use ratatui::crossterm::style::{PrintStyledContent, StyledContent};
 use ratatui::crossterm::terminal::{self, Clear, ClearType as TerminalClear};
 use ratatui::layout::{Position, Rect, Size};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::Widget;
 use ratatui::{Frame, Terminal, TerminalOptions, Viewport};
 use std::io::{self, Write};
 
@@ -68,13 +67,20 @@ impl<W: Write> Inline<W> {
         }
         self.resize()?;
         self.terminal.clear()?;
-        let empty = Buffer::empty(Rect::new(0, 0, self.size().width, 1));
-        let mut buffer = empty.clone();
         let backend = self.terminal.backend_mut();
         for line in lines {
-            buffer.reset();
-            line.render(buffer.area, &mut buffer);
-            backend.draw(empty.diff(&buffer).into_iter())?;
+            // Let the terminal wrap complete diagnostics instead of clipping them to one row.
+            for span in &line.spans {
+                // Embedded controls must not move the cursor outside the tracked viewport.
+                let content = span.content.replace(char::is_control, "");
+                queue!(
+                    backend.writer,
+                    PrintStyledContent(StyledContent::new(
+                        content_style(line.style.patch(span.style)),
+                        content
+                    ))
+                )?;
+            }
             backend.writer.write_all(b"\r\n")?;
             // Each trail advances the viewport origin to the following line.
             backend.cursor = Position::ORIGIN;
