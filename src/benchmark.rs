@@ -132,8 +132,6 @@ fn merge_usage(target: &mut Value, update: &Value) {
     }
 }
 
-/// Seconds per generated token over the generation window. Fewer than two
-/// tokens, or an empty window, leave no interval to average.
 pub fn seconds_per_token(window: Duration, generated: u64) -> Option<f64> {
     let seconds = window.as_secs_f64();
     if seconds > 0.0 && generated > 1 {

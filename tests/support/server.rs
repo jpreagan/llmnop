@@ -57,7 +57,6 @@ impl Server {
                             let api = api.clone();
                             let requests = Arc::clone(&received);
                             connections.spawn(async move {
-                                // A cancelled benchmark may close the connection during a write.
                                 let _ = respond(stream, &api, reply, requests).await;
                             });
                         }

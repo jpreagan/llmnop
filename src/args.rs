@@ -18,7 +18,6 @@ pub enum ApiType {
 
 impl fmt::Display for ApiType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Print the spelling that selects this API on the command line.
         let value = self.to_possible_value().expect("no API type is skipped");
         f.write_str(value.get_name())
     }

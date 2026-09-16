@@ -97,7 +97,6 @@ pub struct Event<'a> {
 }
 
 impl Event<'_> {
-    /// Whether the event carries streamed text, which is what the metrics time.
     pub fn has_text(&self) -> bool {
         !self.content.is_empty() || !self.reasoning.is_empty()
     }
