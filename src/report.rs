@@ -1,3 +1,4 @@
+use crate::args::Args;
 use crate::output::BenchmarkSummary;
 use crate::style::{ACCENT, content_style, group, seconds};
 use ratatui::crossterm::queue;
@@ -10,6 +11,39 @@ use std::path::Path;
 const LABEL_WIDTH: usize = 12;
 
 type Metric = (&'static str, &'static str, fn(Option<f64>) -> String);
+
+pub fn endpoint(args: &Args) -> Vec<Span<'static>> {
+    vec![
+        args.model.clone().unwrap_or_default().bold(),
+        " · ".dim(),
+        args.api.to_string().fg(ACCENT),
+        " · ".dim(),
+        args.url.clone().unwrap_or_default().dim(),
+    ]
+}
+
+pub fn workload(args: &Args) -> String {
+    let mut line = format!("{} input tokens", args.input_tokens);
+    if args.input_tokens_stddev > 0 {
+        line.push_str(&format!(" ±{}", args.input_tokens_stddev));
+    }
+    match args.output_cap {
+        Some(cap) if args.output_cap_stddev > 0 => {
+            line.push_str(&format!(" · output cap {cap} ±{}", args.output_cap_stddev));
+        }
+        Some(cap) => line.push_str(&format!(" · output cap {cap}")),
+        None => line.push_str(" · no output cap"),
+    }
+    line.push_str(&format!(
+        " · {} requests · concurrency {}",
+        args.requests, args.concurrency
+    ));
+    if args.warmup > 0 {
+        line.push_str(&format!(" · warmup {}", args.warmup));
+    }
+    line.push_str(&format!(" · timeout {}s", args.request_timeout));
+    line
+}
 
 fn number(value: Option<f64>, decimals: usize) -> String {
     let Some(v) = value else {
