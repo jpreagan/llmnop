@@ -7,6 +7,14 @@ on:
     branches: [main]
 
 jobs:
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85.0
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --locked --all-targets
+
   check:
     runs-on: ubuntu-latest
     steps:
