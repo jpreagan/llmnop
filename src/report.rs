@@ -148,13 +148,6 @@ pub fn report(summary: &BenchmarkSummary<'_>, directory: &Path) -> Text<'static>
         ]));
     }
     lines.push(Line::default());
-    lines.push(Line::from(
-        format!(
-            "{:<34}{:>8}{:>10}{:>10}{:>10}{:>10}",
-            "", "samples", "mean", "p50", "p95", "p99"
-        )
-        .dim(),
-    ));
     let sections: [(&str, &[Metric]); 3] = [
         (
             "Latency",
@@ -191,11 +184,27 @@ pub fn report(summary: &BenchmarkSummary<'_>, directory: &Path) -> Text<'static>
             ],
         ),
     ];
+    let mut samples_width = 7;
+    let mut value_width = 9;
+    for (_, key, decimals) in sections.iter().flat_map(|(_, rows)| rows.iter()) {
+        let s = &summary.metrics[key];
+        samples_width = samples_width.max(s.count.to_string().len());
+        for value in [s.mean, s.p50, s.p95, s.p99] {
+            value_width = value_width.max(number(value, *decimals).chars().count());
+        }
+    }
+    lines.push(Line::from(
+        format!(
+            "{:<34} {:>samples_width$} {:>value_width$} {:>value_width$} {:>value_width$} {:>value_width$}",
+            "", "samples", "mean", "p50", "p95", "p99"
+        )
+        .dim(),
+    ));
     for (title, rows) in sections {
         lines.push(Line::from(title.bold()));
         for (name, key, decimals) in rows {
             let s = &summary.metrics[key];
-            let cell = |v: Option<f64>| format!("{:>10}", number(v, *decimals));
+            let cell = |v: Option<f64>| format!(" {:>value_width$}", number(v, *decimals));
             let style = if s.count == 0 {
                 Style::new().dim()
             } else {
@@ -203,7 +212,7 @@ pub fn report(summary: &BenchmarkSummary<'_>, directory: &Path) -> Text<'static>
             };
             lines.push(Line::from(vec![
                 format!("  {name:<32}").into(),
-                format!("{:>8}", s.count).dim(),
+                format!(" {:>samples_width$}", s.count).dim(),
                 Span::styled([s.mean, s.p50, s.p95, s.p99].map(cell).concat(), style),
             ]));
         }
@@ -250,4 +259,87 @@ pub fn write(out: &mut impl Write, text: &Text<'_>, color: bool) -> io::Result<(
         writeln!(out, "{text}")?;
     }
     out.flush()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn metric_columns_stay_separate_and_aligned_for_large_values() {
+        let args = Args::parse_from(["llmnop"]);
+        let mut summary = BenchmarkSummary::new(&args, "test".into(), &[], false);
+        for (key, count, value) in [
+            ("ttft_ms", 1, 12.3),
+            ("request_latency_ms", 1, 1_000_000.0),
+            ("input_tokens", 123_456_789, 10_000_000.0),
+        ] {
+            let stats = summary.metrics.get_mut(key).unwrap();
+            stats.count = count;
+            stats.mean = Some(value);
+            stats.p50 = Some(value);
+            stats.p95 = Some(value);
+            stats.p99 = Some(value);
+        }
+        let mut output = Vec::new();
+        write(&mut output, &report(&summary, Path::new("results")), false).unwrap();
+        let output = String::from_utf8(output).unwrap();
+        let column_ends = |line: &str| {
+            let chars: Vec<_> = line.chars().chain([' ']).collect();
+            chars
+                .windows(2)
+                .enumerate()
+                .filter_map(|(i, pair)| {
+                    (!pair[0].is_whitespace() && pair[1].is_whitespace()).then_some(i + 1)
+                })
+                .rev()
+                .take(5)
+                .collect::<Vec<_>>()
+        };
+        let header = output
+            .lines()
+            .find(|line| line.contains("samples"))
+            .unwrap();
+        for (label, expected) in [
+            (
+                "Request latency (ms)",
+                [
+                    "1",
+                    "1,000,000.0",
+                    "1,000,000.0",
+                    "1,000,000.0",
+                    "1,000,000.0",
+                ],
+            ),
+            (
+                "Time to first token (ms)",
+                ["1", "12.3", "12.3", "12.3", "12.3"],
+            ),
+            ("Time to first content (ms)", ["0", "—", "—", "—", "—"]),
+            (
+                "Input",
+                [
+                    "123456789",
+                    "10,000,000",
+                    "10,000,000",
+                    "10,000,000",
+                    "10,000,000",
+                ],
+            ),
+        ] {
+            let line = output
+                .lines()
+                .find(|line| line.trim_start().starts_with(label))
+                .unwrap();
+            let cells: Vec<_> = line
+                .trim_start()
+                .strip_prefix(label)
+                .unwrap()
+                .split_whitespace()
+                .collect();
+            assert_eq!(cells, expected, "{line}");
+            assert_eq!(column_ends(line), column_ends(header), "{line}");
+        }
+    }
 }
