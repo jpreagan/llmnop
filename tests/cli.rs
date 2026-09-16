@@ -1,7 +1,5 @@
 #![cfg(unix)]
 
-// Keep these checks about requests, results, and terminal usability so the
-// dashboard's wording, layout, and rendering strategy can evolve independently.
 mod support {
     pub mod process;
     pub mod server;

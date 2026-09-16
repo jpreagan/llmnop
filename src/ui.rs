@@ -23,9 +23,6 @@ use tokio::time::{Interval, MissedTickBehavior};
 
 const REFRESH: Duration = Duration::from_millis(100);
 const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-// Viewport rows besides one per visible in-flight request: the border, the endpoint,
-// workload, progress, tallies, statistics, and sparkline lines, three spacers, and
-// the in-flight table header.
 const FIXED_ROWS: u16 = 12;
 const MAX_FLIGHT_ROWS: u16 = 8;
 const COLUMN_GAP: u16 = 2;
@@ -40,8 +37,6 @@ const COLUMNS: [(&str, u16, Alignment); 8] = [
     ("of cap", 15, Alignment::Left),
 ];
 
-/// Paces redraws. After a stall the next frame is drawn on time rather than
-/// every missed one in a burst.
 pub fn frames() -> Interval {
     let mut interval = tokio::time::interval(REFRESH);
     interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -59,7 +54,6 @@ struct Live {
     started: Instant,
     first: Option<Instant>,
     last: Option<Instant>,
-    // Streamed text waiting to be counted at the next frame.
     pending_content: String,
     pending_reasoning: String,
     content: u64,
@@ -141,8 +135,6 @@ impl Ui {
         self.terminal.is_some()
     }
 
-    /// Runs a blocking task while showing progress. Returns `None` when the run is
-    /// interrupted first.
     pub async fn attend<T: Send + 'static>(
         &mut self,
         stage: Stage,
@@ -191,8 +183,6 @@ impl Ui {
         }
     }
 
-    /// Counts the text streamed since the last frame. Tokenizing once per frame
-    /// rather than per delta keeps the event loop free while many requests stream.
     pub fn tokenize(&mut self, tokenizer: &Tokenizer) {
         let state = &mut self.state;
         state.advance(Instant::now());
@@ -211,7 +201,6 @@ impl Ui {
         let state = &mut self.state;
         if let Some(live) = state.live.remove(&record.request_id) {
             if let Some(generated) = record.metrics.generated_tokens {
-                // Final counts include text whose deltas have not reached the UI yet.
                 let remaining = generated.saturating_sub(live.content + live.reasoning);
                 state.advance(Instant::now());
                 *state.buckets.back_mut().unwrap() += remaining;
@@ -252,7 +241,6 @@ impl Ui {
 
 impl Drop for Ui {
     fn drop(&mut self) {
-        // A phase may finish before the next frame, including when interrupted.
         self.flush_trails();
     }
 }
@@ -328,7 +316,6 @@ impl State {
         }
     }
 
-    // Records reach the dashboard as requests finish, so every counted start has ended.
     fn finished(&self) -> usize {
         self.tally.started
     }
@@ -497,7 +484,6 @@ impl State {
                 return;
             }
         }
-        // Keep complete columns, dropping details from the right as space runs out.
         let mut shown = 1;
         let mut used = COLUMNS[0].1;
         for (_, width, _) in &COLUMNS[1..] {

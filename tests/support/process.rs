@@ -34,7 +34,6 @@ pub struct Terminal {
 
 impl Terminal {
     pub fn spawn(command: &mut Command, columns: u16, rows: u16, stdout_in_terminal: bool) -> Self {
-        // openpty has no atomic CLOEXEC option; serialize setup with child creation.
         let spawning = SPAWN_LOCK.lock().unwrap();
         let size = Winsize {
             ws_row: rows,
@@ -58,7 +57,6 @@ impl Terminal {
             } else {
                 Stdio::piped()
             });
-        // Only async-signal-safe system calls run between fork and exec.
         unsafe {
             command.pre_exec(|| {
                 if libc::setsid() < 0 || libc::ioctl(0, libc::TIOCSCTTY as _, 0) < 0 {
@@ -68,7 +66,6 @@ impl Terminal {
             });
         }
         let child = command.spawn().unwrap();
-        // Command retains its configured descriptors after spawning.
         command
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -126,8 +123,6 @@ impl Terminal {
             "alternate screen was left active"
         );
         parser.set_scrollback(usize::MAX);
-        // vt100 0.15 needs a viewport tall enough to inspect the entire scrollback.
-        // Expand it only after replay, keeping the original wrapping intact.
         let history = u16::try_from(parser.screen().scrollback()).unwrap();
         parser.set_size(self.rows + history, self.columns);
         let visible = parser.screen().contents();
@@ -169,7 +164,6 @@ fn read_in_background(mut reader: impl Read + Send + 'static) -> Reader {
                 Ok(0) => return Ok(bytes),
                 Ok(count) => bytes.extend_from_slice(&buffer[..count]),
                 Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-                // Linux PTYs report a closed slave as EIO rather than EOF.
                 Err(error) if error.raw_os_error() == Some(libc::EIO) => return Ok(bytes),
                 Err(error) => return Err(error),
             }

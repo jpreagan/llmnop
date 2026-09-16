@@ -18,8 +18,6 @@ pub struct Inline<W: Write> {
 impl<W: Write> Inline<W> {
     pub fn new(mut writer: W, height: u16) -> io::Result<Self> {
         let size = fit(terminal_size()?, height);
-        // Reserve fresh lines, so the backend can address its own viewport without asking
-        // the terminal for a cursor position or changing input modes to read a reply.
         writer.write_all(b"\r\n")?;
         let backend = Relative {
             writer,
@@ -39,13 +37,10 @@ impl<W: Write> Inline<W> {
         self.terminal.backend().size
     }
 
-    /// Follows terminal resizes between frames.
     fn resize(&mut self) -> io::Result<()> {
         let size = fit(terminal_size().unwrap_or_else(|_| self.size()), self.height);
         if size != self.size() {
             let backend = self.terminal.backend_mut();
-            // Every frame ends at column zero on the last reserved row. A shorter
-            // terminal clamps that row; a taller one needs additional reserved lines.
             backend.cursor.y = backend.cursor.y.min(size.height - 1);
             backend.size = size;
             self.terminal.resize(Rect::from((Position::ORIGIN, size)))?;
@@ -69,9 +64,7 @@ impl<W: Write> Inline<W> {
         self.terminal.clear()?;
         let backend = self.terminal.backend_mut();
         for line in lines {
-            // Let the terminal wrap complete diagnostics instead of clipping them to one row.
             for span in &line.spans {
-                // Embedded controls must not move the cursor outside the tracked viewport.
                 let content = span.content.replace(char::is_control, "");
                 queue!(
                     backend.writer,
@@ -82,7 +75,6 @@ impl<W: Write> Inline<W> {
                 )?;
             }
             backend.writer.write_all(b"\r\n")?;
-            // Each trail advances the viewport origin to the following line.
             backend.cursor = Position::ORIGIN;
         }
         backend.append_lines(backend.size.height - 1)?;
@@ -92,7 +84,6 @@ impl<W: Write> Inline<W> {
 
 impl<W: Write> Drop for Inline<W> {
     fn drop(&mut self) {
-        // Leave the terminal as it was before the viewport, whatever else went wrong.
         let _ = self.terminal.clear();
         let _ = self.terminal.show_cursor();
         let _ = self.terminal.backend_mut().flush();
@@ -133,7 +124,6 @@ impl<W: Write> Backend for Relative<W> {
     }
 
     fn append_lines(&mut self, n: u16) -> io::Result<()> {
-        // Ratatui requests the desired height even when the physical terminal is smaller.
         let n = n.min(self.size.height.saturating_sub(self.cursor.y + 1));
         for _ in 0..n {
             self.writer.write_all(b"\r\n")?;
@@ -161,7 +151,6 @@ impl<W: Write> Backend for Relative<W> {
         } else if position.y > self.cursor.y {
             queue!(self.writer, MoveDown(position.y - self.cursor.y))?;
         }
-        // Canonical input may echo ^C between frames and change the physical column.
         queue!(self.writer, MoveToColumn(position.x))?;
         self.cursor = position;
         Ok(())

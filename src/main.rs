@@ -90,7 +90,6 @@ async fn run_phase(
     let mut processing = JoinSet::new();
     let mut records = Vec::with_capacity(requests.len());
     let timeout = Duration::from_secs_f64(args.request_timeout);
-    // Streamed text is only forwarded when a dashboard will count it.
     let (progress, mut deltas) = mpsc::unbounded_channel();
     let progress = ui.interactive().then_some(progress);
     let mut tick = ui::frames();
@@ -140,8 +139,6 @@ async fn run_phase(
 fn main() -> Result<ExitCode> {
     let runtime = tokio::runtime::Runtime::new()?;
     let code = runtime.block_on(run());
-    // An interrupted tokenizer download holds its blocking thread until the
-    // transfer ends. Exit without waiting for it.
     runtime.shutdown_background();
     code
 }
@@ -221,7 +218,6 @@ async fn run() -> Result<ExitCode> {
         )
         .await?,
     );
-    // Clear the dashboard before the report shares its terminal.
     drop(ui);
     let interrupted = *cancel.borrow();
     signals.abort();
