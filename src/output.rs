@@ -21,7 +21,7 @@ pub struct MetricStats {
 }
 
 impl MetricStats {
-    fn new(mut values: Vec<f64>) -> Self {
+    pub fn new(mut values: Vec<f64>) -> Self {
         values.sort_unstable_by(f64::total_cmp);
         let count = values.len();
         let mean = (count > 0).then(|| values.iter().sum::<f64>() / count as f64);
@@ -63,23 +63,24 @@ pub struct Counts {
 }
 
 impl Counts {
+    pub fn add(&mut self, record: &RequestRecord) {
+        self.started += 1;
+        match record.status {
+            Status::Completed => {
+                self.completed += 1;
+                self.completed_at_output_limit += usize::from(record.stopped_at_output_cap());
+                self.completed_with_no_text += usize::from(record.metrics.delivery_events == 0);
+            }
+            Status::Failed => self.failed += 1,
+            Status::TimedOut => self.timed_out += 1,
+            Status::Cancelled => self.cancelled += 1,
+        }
+    }
+
     fn from_records(records: &[&RequestRecord]) -> Self {
         let mut counts = Self::default();
-        for r in records {
-            counts.started += 1;
-            match r.status {
-                Status::Completed => {
-                    counts.completed += 1;
-                    counts.completed_at_output_limit += usize::from(matches!(
-                        r.finish_reason.as_deref(),
-                        Some("length" | "max_tokens" | "max_output_tokens")
-                    ));
-                    counts.completed_with_no_text += usize::from(r.metrics.delivery_events == 0);
-                }
-                Status::Failed => counts.failed += 1,
-                Status::TimedOut => counts.timed_out += 1,
-                Status::Cancelled => counts.cancelled += 1,
-            }
+        for record in records {
+            counts.add(record);
         }
         counts
     }
