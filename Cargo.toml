@@ -26,8 +26,8 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 tokenizers = { version = "0.23.2", features = ["http", "rustls-tls"] }
 tokio = { version = "1.53.1", features = ["full"] }
-comfy-table = { version = "8.0.0", features = ["custom_styling"] }
 directories = "6.0.0"
+ratatui = { version = "0.29.0", default-features = false, features = ["crossterm"] }
 
 [features]
 self-update = ["dep:axoupdater"]
