@@ -3,6 +3,12 @@ use ratatui::style::{Color, Modifier, Style};
 use std::fmt::Display;
 
 pub const ACCENT: Color = Color::Blue;
+pub const REASONING: Color = Color::Magenta;
+pub const CONTENT: Color = Color::Cyan;
+pub const GOOD: Color = Color::Green;
+pub const WARN: Color = Color::Yellow;
+pub const BAD: Color = Color::Red;
+pub const RULE: Color = Color::DarkGray;
 
 pub fn seconds(ms: f64) -> String {
     let s = ms / 1000.0;

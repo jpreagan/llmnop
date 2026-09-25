@@ -162,12 +162,12 @@ async fn run() -> Result<ExitCode> {
         .get_or_insert_with(|| args.model.clone().unwrap())
         .clone();
     let (cancel_tx, cancel) = watch::channel(false);
+    let mut ui = Ui::new(&args, cancel_tx.clone());
     let signals = tokio::spawn(async move {
         if tokio::signal::ctrl_c().await.is_ok() {
             let _ = cancel_tx.send(true);
         }
     });
-    let mut ui = Ui::new(&args, cancel.clone());
     let Some(tokenizer) = ui
         .attend(Stage::Tokenizer, 0, move || tokens::load(&tokenizer_name))
         .await

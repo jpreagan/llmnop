@@ -382,8 +382,8 @@ async fn scheduler_bounds_concurrency_counts_failures_and_exports_recomputable_r
     let requests = (0..5)
         .map(|i| prepared(&client, args::ApiType::Chat, &url, i))
         .collect();
-    let (_tx, rx) = watch::channel(false);
-    let mut ui = Ui::new(&args, rx.clone());
+    let (tx, rx) = watch::channel(false);
+    let mut ui = Ui::new(&args, tx);
     let parent = std::env::temp_dir().join(format!("llmnop-test-{}", benchmark::unix_time_ns()));
     let mut writer = ResultsWriter::new(Some(&parent)).await.unwrap();
     let mut records = run_phase(
@@ -524,8 +524,8 @@ async fn warmup_finishes_before_measurement_and_deadlines_free_slots() {
     ]);
     let client = client::http_client().unwrap();
     let tokenizer = Arc::new(tokens::test_tokenizer());
-    let (_tx, rx) = watch::channel(false);
-    let mut ui = Ui::new(&args, rx.clone());
+    let (tx, rx) = watch::channel(false);
+    let mut ui = Ui::new(&args, tx);
     let parent = std::env::temp_dir().join(format!("llmnop-phases-{}", benchmark::unix_time_ns()));
     let mut writer = ResultsWriter::new(Some(&parent)).await.unwrap();
     let warmup = (0..2)
