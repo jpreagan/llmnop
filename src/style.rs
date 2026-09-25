@@ -2,7 +2,7 @@ use ratatui::crossterm::style::{Attribute, ContentStyle};
 use ratatui::style::{Color, Modifier, Style};
 use std::fmt::Display;
 
-pub const ACCENT: Color = Color::Cyan;
+pub const ACCENT: Color = Color::Blue;
 
 pub fn seconds(ms: f64) -> String {
     let s = ms / 1000.0;

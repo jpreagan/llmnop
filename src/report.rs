@@ -1,4 +1,3 @@
-use crate::args::Args;
 use crate::output::BenchmarkSummary;
 use crate::style::{ACCENT, content_style, group, seconds};
 use ratatui::crossterm::queue;
@@ -10,40 +9,7 @@ use std::path::Path;
 
 const LABEL_WIDTH: usize = 12;
 
-type Metric = (&'static str, &'static str, usize);
-
-fn endpoint(args: &Args) -> Vec<Span<'static>> {
-    vec![
-        args.model.clone().unwrap_or_default().bold(),
-        " · ".dim(),
-        args.api.to_string().fg(ACCENT),
-        " · ".dim(),
-        args.url.clone().unwrap_or_default().dim(),
-    ]
-}
-
-fn workload(args: &Args) -> String {
-    let mut line = format!("{} input tokens", args.input_tokens);
-    if args.input_tokens_stddev > 0 {
-        line.push_str(&format!(" ±{}", args.input_tokens_stddev));
-    }
-    match args.output_cap {
-        Some(cap) if args.output_cap_stddev > 0 => {
-            line.push_str(&format!(" · output cap {cap} ±{}", args.output_cap_stddev));
-        }
-        Some(cap) => line.push_str(&format!(" · output cap {cap}")),
-        None => line.push_str(" · no output cap"),
-    }
-    line.push_str(&format!(
-        " · {} requests · concurrency {}",
-        args.requests, args.concurrency
-    ));
-    if args.warmup > 0 {
-        line.push_str(&format!(" · warmup {}", args.warmup));
-    }
-    line.push_str(&format!(" · timeout {}s", args.request_timeout));
-    line
-}
+type Metric = (&'static str, &'static str, fn(Option<f64>) -> String);
 
 fn number(value: Option<f64>, decimals: usize) -> String {
     let Some(v) = value else {
@@ -60,101 +26,52 @@ fn number(value: Option<f64>, decimals: usize) -> String {
     }
 }
 
+fn duration(ms: Option<f64>) -> String {
+    ms.map_or_else(|| "—".into(), seconds)
+}
+
+fn rate(value: Option<f64>) -> String {
+    number(value, 1)
+}
+
+fn count(value: Option<f64>) -> String {
+    number(value, 0)
+}
+
+fn outcome(summary: &BenchmarkSummary<'_>) -> Line<'static> {
+    let m = &summary.measurement;
+    let mut spans = vec![Span::raw(format!("{} requests", m.started))];
+    for (n, what, color) in [
+        (m.completed, "succeeded", Color::Green),
+        (m.failed, "failed", Color::Red),
+        (m.timed_out, "timed out", Color::Red),
+        (m.cancelled, "cancelled", Color::Yellow),
+        (
+            m.completed_at_output_limit,
+            "stopped at the output cap",
+            Color::Yellow,
+        ),
+        (m.completed_with_no_text, "returned no text", Color::Yellow),
+    ] {
+        if n > 0 {
+            spans.push(" · ".dim());
+            spans.push(n.to_string().fg(color).bold());
+            spans.push(format!(" {what}").dim());
+        }
+    }
+    Line::from(spans)
+}
+
 pub fn report(summary: &BenchmarkSummary<'_>, directory: &Path) -> Text<'static> {
     let args = summary.configuration;
     let m = &summary.measurement;
-    let mut head = vec![
-        format!("llmnop {}", summary.llmnop_version)
-            .bold()
-            .fg(ACCENT),
-        " · ".dim(),
-    ];
-    head.extend(endpoint(args));
-    let mut lines = vec![
-        Line::from(head),
-        Line::from(
-            format!(
-                "{} · tokenizer {}",
-                workload(args),
-                args.tokenizer.clone().unwrap_or_default()
-            )
-            .dim(),
-        ),
-        Line::default(),
-    ];
-    let label = |s: &str| format!("{s:<width$}", width = LABEL_WIDTH).bold();
-    let indent = || Span::raw(" ".repeat(LABEL_WIDTH));
-    let outcome_style = if m.completed == m.started && m.started > 0 {
-        Style::new().green().bold()
-    } else {
-        Style::new().yellow().bold()
-    };
-    let mut outcome = vec![
-        label("Outcome"),
-        Span::styled(
-            format!("{} of {} requests completed", m.completed, m.started),
-            outcome_style,
-        ),
-    ];
-    if let Some(d) = summary.measurement_duration_ms {
-        outcome.push(format!(" in {}", seconds(d)).into());
-    }
-    for (n, what, color) in [
-        (m.failed, "failed", Color::Red),
-        (m.timed_out, "timed out", Color::Yellow),
-        (m.cancelled, "cancelled", Color::Yellow),
-    ] {
-        if n > 0 {
-            outcome.push(" · ".dim());
-            outcome.push(format!("{n} {what}").fg(color).bold());
-        }
-    }
-    lines.push(Line::from(outcome));
-    if summary.termination == "interrupted" {
-        lines.push(Line::from(vec![
-            indent(),
-            format!(
-                "interrupted after {} of {} requests started",
-                m.started, args.requests
-            )
-            .yellow(),
-        ]));
-    }
-    lines.push(Line::from(vec![
-        indent(),
-        format!(
-            "{} stopped at the output cap · {} returned no text",
-            m.completed_at_output_limit, m.completed_with_no_text
-        )
-        .dim(),
-    ]));
-    if m.failed > 0 {
-        let categories: Vec<_> = summary
-            .errors
-            .iter()
-            .map(|(category, n)| format!("{category} ×{n}"))
-            .collect();
-        lines.push(Line::from(vec![indent(), categories.join(" · ").red()]));
-    }
-    if summary.warmup.unsuccessful() > 0 {
-        lines.push(Line::from(vec![
-            indent(),
-            format!(
-                "{} of {} warmup requests did not complete",
-                summary.warmup.unsuccessful(),
-                summary.warmup.started
-            )
-            .yellow(),
-        ]));
-    }
-    lines.push(Line::default());
     let sections: [(&str, &[Metric]); 3] = [
         (
             "Latency",
             &[
-                ("Time to first token (ms)", "ttft_ms", 1),
-                ("Time to first content (ms)", "ttfo_ms", 1),
-                ("Request latency (ms)", "request_latency_ms", 1),
+                ("Time to first token", "ttft_ms", duration),
+                ("Time to first content", "ttfo_ms", duration),
+                ("Request latency", "request_latency_ms", duration),
             ],
         ),
         (
@@ -162,42 +79,93 @@ pub fn report(summary: &BenchmarkSummary<'_>, directory: &Path) -> Text<'static>
             &[(
                 "Throughput per request (tokens/s)",
                 "generation_tokens_per_second",
-                1,
+                rate,
             )],
         ),
         (
             "Tokens per request",
             &[
-                ("Input", "input_tokens", 0),
-                ("Reasoning", "reasoning_tokens", 0),
-                ("Content", "content_tokens", 0),
-                ("Generated", "generated_tokens", 0),
+                ("Input", "input_tokens", count),
+                ("Reasoning", "reasoning_tokens", count),
+                ("Content", "content_tokens", count),
+                ("Generated", "generated_tokens", count),
             ],
         ),
     ];
     let mut name_width = 0;
-    let mut samples_width = 7;
     let mut value_width = 9;
-    for (name, key, decimals) in sections.iter().flat_map(|(_, rows)| rows.iter()) {
+    for (name, key, format) in sections.iter().flat_map(|(_, rows)| rows.iter()) {
         name_width = name_width.max(name.chars().count());
         let s = &summary.metrics[key];
-        samples_width = samples_width.max(s.count.to_string().len());
         for value in [s.mean, s.p50, s.p95, s.p99] {
-            value_width = value_width.max(number(value, *decimals).chars().count());
+            value_width = value_width.max(format(value).chars().count());
         }
     }
+    let width = 2 + name_width + 4 * (value_width + 1);
+
+    let mut head = vec![
+        "llmnop".fg(ACCENT).bold(),
+        "  ".into(),
+        args.model.clone().unwrap_or_default().bold(),
+        "  ".into(),
+        format!("{} · concurrency {}", args.api, args.concurrency).dim(),
+    ];
+    let used: usize = head.iter().map(Span::width).sum();
+    if let Some(d) = summary.measurement_duration_ms {
+        let d = seconds(d);
+        let gap = width.saturating_sub(used + d.chars().count()).max(2);
+        head.push(" ".repeat(gap).into());
+        head.push(d.bold());
+    }
+    let mut lines = vec![Line::from(head), outcome(summary)];
+    if summary.termination == "interrupted" {
+        lines.push(Line::from(
+            format!(
+                "interrupted after {} of {} requests started",
+                m.started, args.requests
+            )
+            .yellow(),
+        ));
+    }
+    if !summary.errors.is_empty() {
+        let n: usize = summary.errors.values().sum();
+        let categories: Vec<_> = summary
+            .errors
+            .iter()
+            .map(|(category, n)| format!("{category} ×{n}"))
+            .collect();
+        let noun = if n == 1 { "failure" } else { "failures" };
+        lines.push(Line::from(vec![
+            format!("{n} {noun}: ").dim(),
+            categories.join(" · ").red(),
+        ]));
+    }
+    if summary.warmup.unsuccessful() > 0 {
+        lines.push(Line::from(
+            format!(
+                "{} of {} warmup requests did not complete",
+                summary.warmup.unsuccessful(),
+                summary.warmup.started
+            )
+            .yellow(),
+        ));
+    }
+    lines.push(Line::default());
     lines.push(Line::from(
         format!(
-            "  {:<name_width$} {:>samples_width$} {:>value_width$} {:>value_width$} {:>value_width$} {:>value_width$}",
-            "", "samples", "mean", "p50", "p95", "p99"
+            "  {:<name_width$} {:>value_width$} {:>value_width$} {:>value_width$} {:>value_width$}",
+            "", "mean", "p50", "p95", "p99"
         )
         .dim(),
     ));
-    for (title, rows) in sections {
-        lines.push(Line::from(title.bold()));
-        for (name, key, decimals) in rows {
+    for (i, (title, rows)) in sections.into_iter().enumerate() {
+        if i > 0 {
+            lines.push(Line::default());
+        }
+        lines.push(Line::from(title.fg(ACCENT).bold()));
+        for (name, key, format) in rows {
             let s = &summary.metrics[key];
-            let cell = |v: Option<f64>| format!(" {:>value_width$}", number(v, *decimals));
+            let cell = |v: Option<f64>| format!(" {:>value_width$}", format(v));
             let style = if s.count == 0 {
                 Style::new().dim()
             } else {
@@ -205,31 +173,33 @@ pub fn report(summary: &BenchmarkSummary<'_>, directory: &Path) -> Text<'static>
             };
             lines.push(Line::from(vec![
                 format!("  {name:<name_width$}").into(),
-                format!(" {:>samples_width$}", s.count).dim(),
                 Span::styled([s.mean, s.p50, s.p95, s.p99].map(cell).concat(), style),
             ]));
         }
     }
     lines.push(Line::default());
+    let label = |s: &str| {
+        format!("{s:<width$}", width = LABEL_WIDTH)
+            .fg(ACCENT)
+            .bold()
+    };
+    let requests_per_second = summary.completed_requests_per_second;
+    let decimals = if requests_per_second.is_some_and(|r| r < 1.0) {
+        3
+    } else {
+        2
+    };
     lines.push(Line::from(vec![
         label("Throughput"),
-        format!(
-            "{} requests/s · {} generated tokens/s",
-            number(summary.completed_requests_per_second, 2),
-            number(summary.completed_generated_tokens_per_second, 1)
-        )
-        .into(),
-        summary
-            .measurement_duration_ms
-            .map(|d| format!(" over {}", seconds(d)))
-            .unwrap_or_default()
-            .dim(),
+        number(requests_per_second, decimals).bold(),
+        " requests/s".dim(),
+        " · ".dim(),
+        number(summary.completed_generated_tokens_per_second, 1).bold(),
+        " generated tokens/s".dim(),
     ]));
-    lines.push(Line::default());
     lines.push(Line::from(vec![
         label("Results"),
         directory.display().to_string().into(),
-        "  (summary.json · requests.jsonl)".dim(),
     ]));
     Text::from(lines)
 }
@@ -257,19 +227,20 @@ pub fn write(out: &mut impl Write, text: &Text<'_>, color: bool) -> io::Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::args::Args;
     use clap::Parser;
 
     #[test]
-    fn metric_columns_stay_separate_and_aligned_for_large_values() {
+    fn metric_values_stay_aligned_under_their_headers() {
         let args = Args::parse_from(["llmnop"]);
         let mut summary = BenchmarkSummary::new(&args, "test".into(), &[], false);
-        for (key, count, value) in [
-            ("ttft_ms", 1, 12.3),
-            ("request_latency_ms", 1, 1_000_000.0),
-            ("input_tokens", 123_456_789, 10_000_000.0),
+        for (key, value) in [
+            ("ttft_ms", 12.3),
+            ("request_latency_ms", 1_000_000.0),
+            ("input_tokens", 10_000_000.0),
         ] {
             let stats = summary.metrics.get_mut(key).unwrap();
-            stats.count = count;
+            stats.count = 1;
             stats.mean = Some(value);
             stats.p50 = Some(value);
             stats.p95 = Some(value);
@@ -278,61 +249,41 @@ mod tests {
         let mut output = Vec::new();
         write(&mut output, &report(&summary, Path::new("results")), false).unwrap();
         let output = String::from_utf8(output).unwrap();
-        let column_ends = |line: &str| {
-            let chars: Vec<_> = line.chars().chain([' ']).collect();
-            chars
-                .windows(2)
-                .enumerate()
-                .filter_map(|(i, pair)| {
-                    (!pair[0].is_whitespace() && pair[1].is_whitespace()).then_some(i + 1)
-                })
-                .rev()
-                .take(5)
-                .collect::<Vec<_>>()
-        };
-        let header = output
+        let header: Vec<char> = output
             .lines()
-            .find(|line| line.contains("samples"))
-            .unwrap();
+            .find(|line| line.trim_start().starts_with("mean"))
+            .unwrap()
+            .chars()
+            .collect();
+        let ends: Vec<usize> = ["mean", "p50", "p95", "p99"]
+            .iter()
+            .map(|name| {
+                let name: Vec<char> = name.chars().collect();
+                header
+                    .windows(name.len())
+                    .position(|w| w == name.as_slice())
+                    .unwrap()
+                    + name.len()
+            })
+            .collect();
         for (label, expected) in [
-            (
-                "Request latency (ms)",
-                [
-                    "1",
-                    "1,000,000.0",
-                    "1,000,000.0",
-                    "1,000,000.0",
-                    "1,000,000.0",
-                ],
-            ),
-            (
-                "Time to first token (ms)",
-                ["1", "12.3", "12.3", "12.3", "12.3"],
-            ),
-            ("Time to first content (ms)", ["0", "—", "—", "—", "—"]),
-            (
-                "Input",
-                [
-                    "123456789",
-                    "10,000,000",
-                    "10,000,000",
-                    "10,000,000",
-                    "10,000,000",
-                ],
-            ),
+            ("Request latency", "16m 40s"),
+            ("Time to first token", "0.01s"),
+            ("Time to first content", "—"),
+            ("Input", "10,000,000"),
         ] {
-            let line = output
+            let line: Vec<char> = output
                 .lines()
                 .find(|line| line.trim_start().starts_with(label))
-                .unwrap();
-            let cells: Vec<_> = line
-                .trim_start()
-                .strip_prefix(label)
                 .unwrap()
-                .split_whitespace()
+                .chars()
                 .collect();
-            assert_eq!(cells, expected, "{line}");
-            assert_eq!(column_ends(line), column_ends(header), "{line}");
+            let expected: Vec<char> = expected.chars().collect();
+            for &end in &ends {
+                let start = end - expected.len();
+                assert_eq!(&line[start..end], expected.as_slice(), "{label}");
+                assert_eq!(line[start - 1], ' ', "{label}");
+            }
         }
     }
 }
