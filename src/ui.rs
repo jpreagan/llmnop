@@ -31,9 +31,9 @@ const COLUMNS: [(&str, u16, Alignment); 8] = [
     ("elapsed", 8, Alignment::Right),
     ("ttft", 7, Alignment::Right),
     ("reasoning", 9, Alignment::Right),
-    ("answer", 8, Alignment::Right),
+    ("content", 8, Alignment::Right),
     ("tok/s", 6, Alignment::Right),
-    ("last delta", 13, Alignment::Right),
+    ("since last event", 16, Alignment::Right),
     ("of cap", 15, Alignment::Left),
 ];
 
