@@ -63,10 +63,10 @@ Include the version prefix, such as `/v1`, in `--url`. For authenticated endpoin
 | How long before anything arrives?         | **TTFT:** time to the first nonempty content or exposed reasoning.                                                    |
 | How long before the answer starts?        | **TTFO:** time to the first nonempty response content.                                                                |
 | How long until the request finishes?      | **Request latency:** time from sending the request to stream completion.                                              |
-| How fast does generation arrive?          | **Generation rate:** locally counted content and reasoning tokens per second during generation.                       |
-| Does the stream stall?                    | **Mean and longest stream-event gaps:** pauses between content or reasoning deliveries.                               |
+| How fast does generation arrive?          | **Throughput per request:** locally counted content and reasoning tokens per second during generation.                |
+| Does the stream stall?                    | **`max_inter_event_latency_ms` in the saved results:** the longest pause between text deliveries.                     |
 | How consistent is the experience?         | **Mean and percentiles:** compare the median (p50) with slower requests at p95 and p99.                               |
-| How much work does the endpoint complete? | **Completed requests/s and generated tokens/s:** throughput across the measured run.                                  |
+| How much work does the endpoint complete? | **Requests/s and generated tokens/s:** throughput across the measured run.                                            |
 | Are requests completing reliably?         | **Completed, failed, timed out, and cancelled counts.** Output-limit and empty completions are identified separately. |
 
 Repeat a workload at different concurrency levels, keeping input sizes, output caps, tokenizer, and reasoning settings consistent. Check actual output lengths when comparing timings.
@@ -75,7 +75,7 @@ A few details matter when comparing runs:
 
 - **Only completed measured requests enter the summary statistics.** Check failures and timeouts alongside latency. Warmup is excluded.
 - **The API may hide reasoning.** TTFT measures what is delivered, not when the model internally starts generating. No exposed reasoning does not mean no reasoning occurred. These timings do not isolate prefill speed.
-- **Streaming events are not individual tokens.** Events can contain several tokens. Generation rate and inter-token latency are estimates over the first-to-last text delivery window; the rate uses `(generated tokens − 1) / window`.
+- **Streaming events are not individual tokens.** Events can contain several tokens. Throughput per request and inter-token latency are estimates over the first-to-last text delivery window; throughput uses `(generated tokens − 1) / window`.
 - **Missing measurements stay missing.** For example, reasoning without response content has no TTFO. Unavailable values appear as `—` in the report and `null` in JSON.
 
 ## Shape the workload

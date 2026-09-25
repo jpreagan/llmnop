@@ -159,34 +159,27 @@ pub fn report(summary: &BenchmarkSummary<'_>, directory: &Path) -> Text<'static>
         ),
         (
             "Generation",
-            &[
-                ("Rate (tokens/s)", "generation_tokens_per_second", 1),
-                ("Inter-token latency (ms)", "mean_inter_token_latency_ms", 1),
-                (
-                    "Stream-event gap, mean (ms)",
-                    "mean_inter_event_latency_ms",
-                    1,
-                ),
-                (
-                    "Stream-event gap, longest (ms)",
-                    "max_inter_event_latency_ms",
-                    1,
-                ),
-            ],
+            &[(
+                "Throughput per request (tokens/s)",
+                "generation_tokens_per_second",
+                1,
+            )],
         ),
         (
             "Tokens per request",
             &[
                 ("Input", "input_tokens", 0),
-                ("Exposed reasoning", "reasoning_tokens", 0),
+                ("Reasoning", "reasoning_tokens", 0),
                 ("Content", "content_tokens", 0),
                 ("Generated", "generated_tokens", 0),
             ],
         ),
     ];
+    let mut name_width = 0;
     let mut samples_width = 7;
     let mut value_width = 9;
-    for (_, key, decimals) in sections.iter().flat_map(|(_, rows)| rows.iter()) {
+    for (name, key, decimals) in sections.iter().flat_map(|(_, rows)| rows.iter()) {
+        name_width = name_width.max(name.chars().count());
         let s = &summary.metrics[key];
         samples_width = samples_width.max(s.count.to_string().len());
         for value in [s.mean, s.p50, s.p95, s.p99] {
@@ -195,7 +188,7 @@ pub fn report(summary: &BenchmarkSummary<'_>, directory: &Path) -> Text<'static>
     }
     lines.push(Line::from(
         format!(
-            "{:<34} {:>samples_width$} {:>value_width$} {:>value_width$} {:>value_width$} {:>value_width$}",
+            "  {:<name_width$} {:>samples_width$} {:>value_width$} {:>value_width$} {:>value_width$} {:>value_width$}",
             "", "samples", "mean", "p50", "p95", "p99"
         )
         .dim(),
@@ -211,7 +204,7 @@ pub fn report(summary: &BenchmarkSummary<'_>, directory: &Path) -> Text<'static>
                 Style::new()
             };
             lines.push(Line::from(vec![
-                format!("  {name:<32}").into(),
+                format!("  {name:<name_width$}").into(),
                 format!(" {:>samples_width$}", s.count).dim(),
                 Span::styled([s.mean, s.p50, s.p95, s.p99].map(cell).concat(), style),
             ]));
@@ -221,7 +214,7 @@ pub fn report(summary: &BenchmarkSummary<'_>, directory: &Path) -> Text<'static>
     lines.push(Line::from(vec![
         label("Throughput"),
         format!(
-            "{} completed requests/s · {} generated tokens/s",
+            "{} requests/s · {} generated tokens/s",
             number(summary.completed_requests_per_second, 2),
             number(summary.completed_generated_tokens_per_second, 1)
         )
