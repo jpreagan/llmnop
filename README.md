@@ -38,13 +38,14 @@ llmnop \
   --model Qwen/Qwen3.8-27B \
   --input-tokens 550 \
   --output-cap 2048 \
+  --extra-inputs '{"reasoning_effort":"medium"}' \
   --requests 10 \
   --concurrency 4
 ```
 
-This sends 10 requests with up to four in flight. Each completed or failed attempt frees a slot for the next request. Failed attempts count toward the total and are not retried.
+This sends ten requests with up to four in flight. Each completed or failed attempt frees a slot for the next request. Failed attempts count toward the total and are not retried.
 
-While stderr is a terminal, a fullscreen view shows preparation, warmup, and measurement progress, request outcomes, in-flight and recent requests, output tokens per second, time to first token per request, and a timeline of each request's waiting, reasoning, and content phases. It adapts to the terminal size. Live token counts are estimated from partial streamed text; saved results and the final report use the existing post-request token accounting. Failed, timed-out, and cancelled requests are listed on stderr after the view closes. When stderr is redirected or piped, or `TERM` is `dumb`, progress and a line per finished request are printed as plain text.
+While a benchmark runs, llmnop shows a live view with its progress, the requests in flight, output tokens per second, time to first token, and a timeline of each request. Token counts in the live view are approximate. The report and saved results count tokens with the tokenizer after each request finishes. Requests that fail, time out, or are cancelled are listed when the run ends. If stderr is redirected or `TERM` is `dumb`, llmnop prints progress as plain text instead.
 
 Change the URL and model to use your endpoint. `--tokenizer` accepts a Hugging Face tokenizer ID or a local `tokenizer.json`. When omitted, it uses the model name.
 

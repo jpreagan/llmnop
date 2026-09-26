@@ -6,6 +6,8 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 
+## [0.12.0]
+
 ### Added
 
 - Print progress and a line per finished request as plain text when stderr is not a terminal or `TERM` is `dumb`. ([#77](https://github.com/jpreagan/llmnop/pull/77))
