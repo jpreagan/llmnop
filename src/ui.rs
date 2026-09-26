@@ -76,7 +76,6 @@ impl Outcome {
 struct Request {
     started: Instant,
     ended: Option<Instant>,
-    cap: Option<u32>,
     first: Option<Instant>,
     last: Option<Instant>,
     activity: Vec<(Instant, Activity)>,
@@ -90,12 +89,11 @@ struct Request {
 }
 
 impl Request {
-    fn new(cap: Option<u32>) -> Self {
+    fn new() -> Self {
         let started = Instant::now();
         Self {
             started,
             ended: None,
-            cap,
             first: None,
             last: None,
             activity: vec![(started, Activity::Waiting)],
@@ -234,8 +232,8 @@ impl Ui {
         self.draw();
     }
 
-    pub fn started(&mut self, id: u32, cap: Option<u32>) {
-        self.state.requests.insert(id, Request::new(cap));
+    pub fn started(&mut self, id: u32) {
+        self.state.requests.insert(id, Request::new());
     }
 
     pub fn delta(&mut self, delta: Delta) {
@@ -460,9 +458,7 @@ mod tests {
             stage_started: now,
             total: requests as usize,
             cancel: watch::channel(false).1,
-            requests: (0..requests)
-                .map(|id| (id, Request::new(Some(32))))
-                .collect(),
+            requests: (0..requests).map(|id| (id, Request::new())).collect(),
             tally: Counts::default(),
             latency: Vec::new(),
             buckets: vec![0],
@@ -485,7 +481,7 @@ mod tests {
         state.buckets = (0..301).map(|i| 40 + (i * 7 % 23) as u64).collect();
         for id in 0..24u32 {
             let started = ago(300.0 - f64::from(id) * 11.0);
-            let mut request = Request::new(Some(1024));
+            let mut request = Request::new();
             request.started = started;
             let first = started + Duration::from_secs_f64(0.4 + f64::from(id % 5) * 0.3);
             let switch = first + Duration::from_secs(8);

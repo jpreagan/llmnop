@@ -101,7 +101,7 @@ async fn run_phase(
             let Some(request) = requests.pop_front() else {
                 break;
             };
-            ui.started(request.id, request.output_cap);
+            ui.started(request.id);
             in_flight.spawn(benchmark::capture(
                 client.clone(),
                 args.api,

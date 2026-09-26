@@ -67,7 +67,6 @@ enum Column {
     Tokens,
     Rate,
     Since,
-    Cap,
 }
 
 impl Column {
@@ -82,19 +81,17 @@ impl Column {
             Self::Tokens => ("tokens", 6, true),
             Self::Rate => ("tok/s", 5, true),
             Self::Since => ("since last", 10, true),
-            Self::Cap => ("of cap", 6, true),
         }
     }
 
     /// The widest set that fits, dropping less important columns first.
     fn fitting(width: u16, detailed: bool) -> &'static [Column] {
         use Column::*;
-        const SETS: [&[Column]; 7] = [
+        const SETS: [&[Column]; 6] = [
             &[
-                Request, State, Elapsed, Ttft, Reasoning, Content, Rate, Since, Cap,
+                Request, State, Elapsed, Ttft, Reasoning, Content, Rate, Since,
             ],
-            &[Request, State, Elapsed, Ttft, Reasoning, Content, Rate, Cap],
-            &[Request, State, Elapsed, Ttft, Tokens, Rate, Cap],
+            &[Request, State, Elapsed, Ttft, Reasoning, Content, Rate],
             &[Request, State, Elapsed, Ttft, Tokens, Rate],
             &[Request, State, Elapsed, Ttft, Tokens],
             &[Request, State, Elapsed, Tokens],
@@ -107,7 +104,7 @@ impl Column {
                 total - 2 <= width
             })
             .copied()
-            .unwrap_or(SETS[6])
+            .unwrap_or(SETS[5])
     }
 }
 
@@ -427,9 +424,6 @@ impl View<'_> {
             let generated = request.generated();
             if generated > 0 {
                 spans.push(format!("  {:>5} tok", group(generated)).dim());
-                if let Some(cap) = request.cap {
-                    spans.push(format!("  {}% of cap", percent(generated, cap)).dim());
-                }
             }
             self.put(a.x, first + i as u16, spans);
         }
@@ -510,10 +504,6 @@ impl View<'_> {
                 }
                 Some(last) => seconds_of(self.now - last).into(),
                 None => "".into(),
-            },
-            Column::Cap => match request.cap {
-                Some(cap) if !failed => format!("{}%", percent(request.generated(), cap)).into(),
-                _ => "".into(),
             },
         }
     }
@@ -981,10 +971,6 @@ fn trim(value: f64) -> String {
     } else {
         format!("{value:.2}")
     }
-}
-
-fn percent(generated: u64, cap: u32) -> u64 {
-    generated * 100 / u64::from(cap.max(1))
 }
 
 fn seconds_of(d: Duration) -> String {
