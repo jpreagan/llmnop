@@ -44,6 +44,8 @@ llmnop \
 
 This sends 10 requests with up to four in flight. Each completed or failed attempt frees a slot for the next request. Failed attempts count toward the total and are not retried.
 
+While stderr is a terminal, a fullscreen view shows preparation, warmup, and measurement progress, request outcomes, in-flight and recent requests, output tokens per second, time to first token per request, and a timeline of each request's waiting, reasoning, and content phases. It adapts to the terminal size. Live token counts are estimated from partial streamed text; saved results and the final report use the existing post-request token accounting. Failed, timed-out, and cancelled requests are listed on stderr after the view closes. When stderr is redirected or piped, or `TERM` is `dumb`, progress and a line per finished request are printed as plain text.
+
 Change the URL and model to use your endpoint. `--tokenizer` accepts a Hugging Face tokenizer ID or a local `tokenizer.json`. When omitted, it uses the model name.
 
 All requests stream. The API option selects the path appended to your base URL:

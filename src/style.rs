@@ -3,6 +3,12 @@ use ratatui::style::{Color, Modifier, Style};
 use std::fmt::Display;
 
 pub const ACCENT: Color = Color::Blue;
+pub const REASONING: Color = Color::Magenta;
+pub const CONTENT: Color = Color::Cyan;
+pub const GOOD: Color = Color::Green;
+pub const WARN: Color = Color::Yellow;
+pub const BAD: Color = Color::Red;
+pub const RULE: Color = Color::DarkGray;
 
 pub fn seconds(ms: f64) -> String {
     let s = ms / 1000.0;
@@ -19,7 +25,6 @@ pub fn seconds(ms: f64) -> String {
     }
 }
 
-/// Inserts thousands separators into a whole number.
 pub fn group(n: impl Display) -> String {
     let digits = n.to_string();
     let mut out = String::with_capacity(digits.len() + digits.len() / 3);
@@ -32,7 +37,6 @@ pub fn group(n: impl Display) -> String {
     out
 }
 
-/// ratatui 0.29 has no public conversion from its styles to crossterm's.
 pub fn content_style(style: Style) -> ContentStyle {
     let mut content = ContentStyle {
         foreground_color: style.fg.map(Into::into),
