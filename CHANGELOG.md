@@ -6,11 +6,17 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 
+### Added
+
+- Print progress and a line per finished request as plain text when stderr is not a terminal or `TERM` is `dumb`. ([#77](https://github.com/jpreagan/llmnop/pull/77))
+
 ### Changed
 
 - Replace the default summary table with a grouped report of request outcomes, latency, generation, and token statistics, aggregate throughput, and the results path. ([#76](https://github.com/jpreagan/llmnop/pull/76))
 - Show latency in the report as durations instead of milliseconds. ([#76](https://github.com/jpreagan/llmnop/pull/76))
 - Color the report when stdout is a terminal and `NO_COLOR` is unset. ([#76](https://github.com/jpreagan/llmnop/pull/76))
+- Replace the progress bar with a fullscreen live view while stderr is a terminal. It shows progress, in-flight and recent requests, output tokens per second, time to first token, and a timeline of each request's phases. ([#77](https://github.com/jpreagan/llmnop/pull/77))
+- List failed, timed-out, and cancelled requests on stderr after the live view closes, instead of printing errors during the run. ([#77](https://github.com/jpreagan/llmnop/pull/77))
 
 ### Removed
 
