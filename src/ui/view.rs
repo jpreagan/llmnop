@@ -782,21 +782,27 @@ impl View<'_> {
                 }
             }
         }
-        let y = inner.y + rows + 1;
-        let end = if bars.is_empty() {
-            x + width as u16
+        let shown = if bars.is_empty() {
+            width
         } else {
-            x + bars.len().min(width) as u16
+            bars.len().min(width)
         };
-        let mut free = self.put(x, y, first.dim()) + 1;
-        if let Some((i, text)) = middle {
+        // Labels end under their bar, reaching into the free space left of
+        // the axis, so the tick and the label's last character mark the bar.
+        let marks = [
+            Some((0, first)),
+            middle,
+            Some((shown.saturating_sub(1), last)),
+        ];
+        let mut free = inner.x;
+        for (i, text) in marks.into_iter().flatten() {
             let at = x + i as u16;
-            if at >= free && at + text.len() as u16 + 1 < end.saturating_sub(last.len() as u16) {
-                free = self.put(at, y, text.dim()) + 1;
+            let start = (at + 1).saturating_sub(text.len() as u16);
+            if text.is_empty() || start < free {
+                continue;
             }
-        }
-        if end >= free + last.len() as u16 {
-            self.put_right(end, y, last.dim());
+            self.put(at, inner.y + rows, "┴".fg(RULE));
+            free = self.put(start, inner.y + rows + 1, text.dim()) + 1;
         }
     }
 
@@ -1008,6 +1014,32 @@ mod tests {
         let mut buf = Buffer::empty(area);
         render(&state, area, &mut buf);
         buf
+    }
+
+    #[test]
+    fn ttft_labels_end_under_their_bars() {
+        let mut state = busy();
+        state.requests.retain(|id, _| *id < 4);
+        let area = Rect::new(0, 0, 120, 40);
+        let mut buf = Buffer::empty(area);
+        render(&state, area, &mut buf);
+        let cells = |y| -> Vec<&str> { (0..area.width).map(|x| buf[(x, y)].symbol()).collect() };
+        // The column holding a label's last character.
+        let end = |y, label: &str| {
+            let chars: Vec<String> = label.chars().map(String::from).collect();
+            cells(y)
+                .windows(chars.len())
+                .position(|w| w == chars)
+                .map(|x| (x + chars.len() - 1) as u16)
+        };
+        let y = (0..area.height)
+            .find(|&y| end(y, "#0").is_some() && end(y, "#3").is_some())
+            .expect("first and last labels are drawn");
+        let end = |label| end(y, label).unwrap();
+        let (first, last) = (end("#0"), end("#3"));
+        assert_eq!(last - first, 3, "labels are one column per request apart");
+        assert_eq!(buf[(first, y - 1)].symbol(), "┴");
+        assert_eq!(buf[(last, y - 1)].symbol(), "┴");
     }
 
     #[test]
