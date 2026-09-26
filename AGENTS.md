@@ -1,13 +1,5 @@
 # llmnop
 
-CLI tool for benchmarking streaming LLM inference endpoints.
-
-## CLI
-
-- `--model` and `--url` are required for benchmarks.
-- `--api-key` is optional for unauthenticated endpoints.
-- Use `--help` for complete usage and flags.
-
 ## Metric Semantics
 
 - **TTFT**: Request start to the first non-empty content or reasoning delta.
@@ -27,7 +19,7 @@ CLI tool for benchmarking streaming LLM inference endpoints.
 
 - UNIX philosophy: small, focused, correct code
 - Idiomatic Rust (model after tokio, ripgrep, cargo)
-- Comments explain why, not what; code should be self-documenting
+- No comments. Code should be self-documenting; comment only in exceptional cases where the code cannot explain why
 - Be conservative with dependencies; vet before adding
 - Tests verify behavior, not implementation
 - Keep test code and test harnesses in Rust
@@ -42,6 +34,7 @@ CLI tool for benchmarking streaming LLM inference endpoints.
 
 - **PR titles**: Conventional Commits `type(scope): description` (lowercase)
   - Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`
+- **Branches**: `type/short-description`, using the PR title types
 - **Commits**: Plain lowercase, no conventional format
 - **PRs**: Atomic—one concern per PR
 - **PR descriptions**: Lead with a short Summary. Add Changes or Why only when useful; omit Testing, Validation, Compatibility, and Notes unless requested or needed to disclose a limitation.
@@ -49,7 +42,5 @@ CLI tool for benchmarking streaming LLM inference endpoints.
 ## Changelog
 
 Use Keep a Changelog format. User-facing changes only.
-
-Sections: Added, Changed, Deprecated, Removed, Fixed, Security.
 
 Link each entry to its corresponding pull request, not only the originating issue.

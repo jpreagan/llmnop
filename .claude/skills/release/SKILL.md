@@ -1,13 +1,13 @@
 ---
 name: release
 description: Prepare and publish an llmnop release - release PR, tag, GitHub release, Homebrew formula, and crates.io. Use when the user asks to cut, prepare, or publish a new version.
-metadata:
-  short-description: Prepare and publish an llmnop release
+argument-hint: "[X.Y.Z]"
+disable-model-invocation: true
 ---
 
 # Release llmnop
 
-Release the version the user gives. If they give none, pick one from the `[Unreleased]` changelog entries by semver (patch for fixes, minor for features, major for breaking changes) and confirm it with the user.
+Release version `$ARGUMENTS`. If no version is given, pick one from the `[Unreleased]` changelog entries by semver (patch for fixes, minor for features, major for breaking changes) and confirm it with the user.
 
 ## Prepare
 
