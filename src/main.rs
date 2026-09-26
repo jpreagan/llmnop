@@ -3,8 +3,10 @@ mod benchmark;
 mod client;
 mod output;
 mod prompt;
+mod report;
 #[cfg(feature = "self-update")]
 mod self_update;
+mod style;
 #[cfg(test)]
 mod tests;
 mod tokens;
@@ -164,16 +166,23 @@ async fn main() -> Result<ExitCode> {
     signals.abort();
     let summary = BenchmarkSummary::new(&args, writer.run_id.clone(), &records, interrupted);
     writer.finish(&summary).await?;
+    let mut stdout = io::stdout().lock();
     match args.format {
-        OutputFormat::Table => io::stdout().lock().write_all(summary.table().as_bytes())?,
+        OutputFormat::Table => {
+            let color = stdout.is_terminal() && std::env::var_os("NO_COLOR").is_none();
+            report::write(
+                &mut stdout,
+                &report::report(&summary, &writer.directory),
+                color,
+            )?;
+        }
         OutputFormat::Json => {
-            let mut stdout = io::stdout().lock();
             serde_json::to_writer(&mut stdout, &summary)?;
             writeln!(stdout)?;
+            eprintln!("Results: {}", writer.directory.display());
         }
-        OutputFormat::None => {}
+        OutputFormat::None => eprintln!("Results: {}", writer.directory.display()),
     }
-    eprintln!("Results: {}", writer.directory.display());
     let failed = summary.measurement.unsuccessful() + summary.warmup.unsuccessful() > 0;
     Ok(if interrupted {
         ExitCode::from(130)

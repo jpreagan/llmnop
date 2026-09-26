@@ -6,6 +6,16 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased]
 
+### Changed
+
+- Replace the default summary table with a grouped report of request outcomes, latency, generation, and token statistics, aggregate throughput, and the results path. ([#76](https://github.com/jpreagan/llmnop/pull/76))
+- Show latency in the report as durations instead of milliseconds. ([#76](https://github.com/jpreagan/llmnop/pull/76))
+- Color the report when stdout is a terminal and `NO_COLOR` is unset. ([#76](https://github.com/jpreagan/llmnop/pull/76))
+
+### Removed
+
+- Remove inter-token latency and stream-event gaps from the report. They remain in `summary.json`. ([#76](https://github.com/jpreagan/llmnop/pull/76))
+
 ## [0.11.0]
 
 ### Added
